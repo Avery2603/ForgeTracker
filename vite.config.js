@@ -5,7 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/',
+  base: '/forge-tracker-pwa/',
   plugins: [
     react(),
     tailwindcss(),
@@ -19,8 +19,8 @@ export default defineConfig({
         theme_color: '#09090b',
         background_color: '#09090b',
         display: 'standalone',
-        start_url: '/',
-        scope: '/',
+        start_url: '/forge-tracker-pwa/',
+        scope: '/forge-tracker-pwa/',
         icons: [
           {
             src: 'icon-192.png',
