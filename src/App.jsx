@@ -850,7 +850,7 @@ export default function App() {
           />
         )}
         {tab === "cookbook" && (
-          <CookbookTab goals={goals} setMeals={setMeals} setLog={setLog} meals={meals} log={log} activeProgramKey={activeProgramKey} programStartDates={programStartDates} />
+          <CookbookTab goals={goals} mealSlots={mealSlots} setMeals={setMeals} setLog={setLog} meals={meals} log={log} activeProgramKey={activeProgramKey} programStartDates={programStartDates} />
         )}
         {tab === "grocery" && (
           <GroceryTab goals={goals} groceryPlan={groceryPlan} setGroceryPlan={setGroceryPlan} meals={meals} />
@@ -1705,6 +1705,33 @@ function combosOfSnacks(snacks) {
   return out;
 }
 
+// Returns a scaled copy of a recipe — macros and ingredient quantities all
+// multiplied by `factor` (e.g. 1.5x a serving of Chicken Rice Bowl). Without
+// this, matching is stuck picking whichever of the ~25 fixed-serving recipes
+// happens to be closest, which can be a bad fit and looks like it's ignoring
+// your macros entirely. Scaling lets a recipe portion itself up or down to
+// actually hit a target. `baseId` is preserved so "pick a genuinely
+// different recipe for variety" logic isn't fooled by two different
+// portion sizes of the same dish.
+function scaleRecipe(base, factor) {
+  if (factor === 1) return { ...base, baseId: base.id, scaleFactor: 1 };
+  const round1 = (n) => Math.round(n * 10) / 10;
+  return {
+    ...base,
+    id: `${base.id}@${factor}`,
+    baseId: base.id,
+    scaleFactor: factor,
+    name: `${base.name} (${round1(factor)}× serving)`,
+    perServing: {
+      calories: Math.round(base.perServing.calories * factor),
+      protein: Math.round(base.perServing.protein * factor),
+      carbs: Math.round(base.perServing.carbs * factor),
+      fat: Math.round(base.perServing.fat * factor),
+    },
+    ingredients: base.ingredients.map((i) => ({ ...i, qty: i.qty * factor })),
+  };
+}
+
 // Builds a consolidated grocery list from a set of (recipe, servingsNeeded)
 // pairs — servingsNeeded being how many days that recipe is used across the
 // week. Ingredient quantities are per-serving, so this scales correctly
@@ -1746,11 +1773,16 @@ function scoreCombo(recipes, target) {
 // for ONE day (≈1000+ combos with 6 recipes per slot — trivial client-side),
 // scores each against the daily macro target. Used as the building block for
 // the two-variant weekly layout below.
+const DAILY_SCALE_OPTIONS = [0.75, 1, 1.25];
+
 function rankDailyCombos({ target }) {
   const results = [];
-  for (const b of COOKBOOK.breakfast) {
-    for (const l of COOKBOOK.lunch) {
-      for (const d of COOKBOOK.dinner) {
+  const breakfasts = COOKBOOK.breakfast.flatMap((r) => DAILY_SCALE_OPTIONS.map((f) => scaleRecipe(r, f)));
+  const lunches = COOKBOOK.lunch.flatMap((r) => DAILY_SCALE_OPTIONS.map((f) => scaleRecipe(r, f)));
+  const dinners = COOKBOOK.dinner.flatMap((r) => DAILY_SCALE_OPTIONS.map((f) => scaleRecipe(r, f)));
+  for (const b of breakfasts) {
+    for (const l of lunches) {
+      for (const d of dinners) {
         for (const snackSet of combosOfSnacks(COOKBOOK.snack)) {
           const recipes = [b, l, d, ...snackSet];
           const { totals, score } = scoreCombo(recipes, target);
@@ -1781,8 +1813,11 @@ function generateCookbookWeek({ target, weeklyBudget }) {
   if (!ranked.length) return null;
   const comboA = ranked[0];
   const comboBraw = ranked.find((r) => {
-    const idsA = new Set(comboA.recipes.map((x) => x.id));
-    return r.recipes.some((x) => !idsA.has(x.id)) && r.recipes[0].id !== comboA.recipes[0].id;
+    const idsA = new Set(comboA.recipes.map((x) => x.baseId || x.id));
+    return (
+      r.recipes.some((x) => !idsA.has(x.baseId || x.id)) &&
+      (r.recipes[0].baseId || r.recipes[0].id) !== (comboA.recipes[0].baseId || comboA.recipes[0].id)
+    );
   }) || ranked[Math.min(1, ranked.length - 1)];
   const comboB = comboBraw;
 
@@ -1803,6 +1838,123 @@ function generateCookbookWeek({ target, weeklyBudget }) {
   [...comboA.recipes, ...comboB.recipes].forEach((r) => allRecipesMap.set(r.id, r));
 
   return { comboA, comboB, groceries, weeklyCost, avgDaily, allRecipes: Array.from(allRecipesMap.values()) };
+}
+
+// ---------------------------------------------------------------------------
+// Per-meal-slot weekly layout: used instead of generateCookbookWeek() when
+// the user has set up Per-meal targets in Prep → Daily goals (mealSlots).
+// Rather than brute-forcing a whole day's combo against a single daily
+// total (which can hit the total while individual meals are way off target),
+// this matches EACH meal slot's own protein/carb/fat target to the single
+// best-fitting recipe in the whole library (any category), independently.
+// That's what actually keeps Prep's per-meal macros and the Cookbook in
+// sync: the number of meals generated matches the number of slots you set
+// up, and each one is picked for that slot's specific macros.
+// ---------------------------------------------------------------------------
+function scoreRecipeForSlot(recipe, slot) {
+  const p = recipe.perServing;
+  const err = (a, b) => (b > 0 ? Math.abs(a - b) / b : 0);
+  // Protein weighted heaviest — it's usually the tightest constraint for a
+  // bodybuilder's per-meal target — with calories as a lighter tiebreaker.
+  return (
+    err(p.protein, slot.protein) * 2 +
+    err(p.carbs, slot.carbs) +
+    err(p.fat, slot.fat) +
+    err(p.calories, slot.calories) * 0.25
+  );
+}
+
+const SLOT_SCALE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
+function generateCookbookWeekFromMealSlots({ mealSlots, weeklyBudget }) {
+  const baseRecipes = [
+    ...COOKBOOK.breakfast,
+    ...COOKBOOK.lunch,
+    ...COOKBOOK.dinner,
+    ...COOKBOOK.snack,
+  ];
+  // Every recipe at every portion size — this is what lets a slot match a
+  // recipe scaled to fit (e.g. 1.5x Chicken Rice Bowl), rather than only
+  // choosing from the 25 fixed single-serving amounts.
+  const allVariants = baseRecipes.flatMap((r) => SLOT_SCALE_OPTIONS.map((f) => scaleRecipe(r, f)));
+
+  const slots = mealSlots
+    .map((s) => {
+      const protein = Number(s.protein) || 0;
+      const carbs = Number(s.carbs) || 0;
+      const fat = Number(s.fat) || 0;
+      return {
+        id: s.id,
+        label: s.label || "Meal",
+        protein,
+        carbs,
+        fat,
+        calories: protein * 4 + carbs * 4 + fat * 9,
+      };
+    })
+    .filter((s) => s.protein > 0 || s.carbs > 0 || s.fat > 0);
+
+  if (!slots.length) return null;
+
+  const comboARecipes = [];
+  const comboBRecipes = [];
+  const slotLabels = [];
+
+  slots.forEach((slot) => {
+    const ranked = [...allVariants].sort(
+      (a, b) => scoreRecipeForSlot(a, slot) - scoreRecipeForSlot(b, slot)
+    );
+    const best = ranked[0];
+    // Combo B should be a genuinely different dish, not just a different
+    // portion size of the same one — compare baseId, not the scaled id.
+    const nextDifferent =
+      ranked.find((r) => (r.baseId || r.id) !== (best.baseId || best.id)) ||
+      ranked[Math.min(1, ranked.length - 1)];
+    comboARecipes.push(best);
+    comboBRecipes.push(nextDifferent);
+    slotLabels.push(slot.label);
+  });
+
+  const sumTotals = (recipes) =>
+    recipes.reduce(
+      (acc, r) => ({
+        calories: acc.calories + r.perServing.calories,
+        protein: acc.protein + r.perServing.protein,
+        carbs: acc.carbs + r.perServing.carbs,
+        fat: acc.fat + r.perServing.fat,
+      }),
+      { calories: 0, protein: 0, carbs: 0, fat: 0 }
+    );
+
+  const comboA = { recipes: comboARecipes, totals: sumTotals(comboARecipes), score: 0 };
+  const comboB = { recipes: comboBRecipes, totals: sumTotals(comboBRecipes), score: 0 };
+
+  const recipeCounts = [
+    ...comboA.recipes.map((r) => ({ recipe: r, count: COMBO_A_DAYS.length })),
+    ...comboB.recipes.map((r) => ({ recipe: r, count: COMBO_B_DAYS.length })),
+  ];
+  const groceries = weeklyGroceryList(recipeCounts);
+  const weeklyCost = groceries.reduce((s, g) => s + g.cost, 0);
+  const avgDaily = {
+    calories: (comboA.totals.calories * COMBO_A_DAYS.length + comboB.totals.calories * COMBO_B_DAYS.length) / 7,
+    protein: (comboA.totals.protein * COMBO_A_DAYS.length + comboB.totals.protein * COMBO_B_DAYS.length) / 7,
+    carbs: (comboA.totals.carbs * COMBO_A_DAYS.length + comboB.totals.carbs * COMBO_B_DAYS.length) / 7,
+    fat: (comboA.totals.fat * COMBO_A_DAYS.length + comboB.totals.fat * COMBO_B_DAYS.length) / 7,
+  };
+  const allRecipesMap = new Map();
+  [...comboA.recipes, ...comboB.recipes].forEach((r) => allRecipesMap.set(r.id, r));
+
+  return {
+    comboA,
+    comboB,
+    groceries,
+    weeklyCost,
+    avgDaily,
+    allRecipes: Array.from(allRecipesMap.values()),
+    slotLabels,
+    slotTargets: slots,
+    perMealMode: true,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1929,9 +2081,12 @@ function dateAtOffset(n) {
   return d.toISOString().slice(0, 10);
 }
 
-function WeekView({ meals, log, setLog, activeProgramKey, target, weeklyBudget, setMeals, programStartDate }) {
+function WeekView({ meals, log, setLog, activeProgramKey, target, mealSlots = [], weeklyBudget, setMeals, programStartDate }) {
   const program = PROGRAMS[activeProgramKey];
   const [filling, setFilling] = useState(null); // date currently being filled
+  const hasPerMealTargets = mealSlots.length > 0;
+  const hasDailyTarget = target.calories > 0;
+  const hasAnyTarget = hasPerMealTargets || hasDailyTarget;
 
   const days = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
@@ -1972,11 +2127,20 @@ function WeekView({ meals, log, setLog, activeProgramKey, target, weeklyBudget, 
   const overBudget = weeklyBudget > 0 && weekCost > weeklyBudget;
 
   const fillDay = (date) => {
+    if (!hasAnyTarget) return;
     setFilling(date);
-    const ranked = rankDailyCombos({ target });
-    const best = ranked[0];
-    if (!best) { setFilling(null); return; }
-    const withIds = best.recipes.map((r) => ({
+    let recipes = [];
+    if (hasPerMealTargets) {
+      // Same matching as the Generate tab's Combo A — one best-fit recipe
+      // per meal slot you set up in Prep, not just a whole-day guess.
+      const result = generateCookbookWeekFromMealSlots({ mealSlots, weeklyBudget });
+      recipes = result ? result.comboA.recipes : [];
+    } else {
+      const ranked = rankDailyCombos({ target });
+      recipes = ranked[0] ? ranked[0].recipes : [];
+    }
+    if (!recipes.length) { setFilling(null); return; }
+    const withIds = recipes.map((r) => ({
       id: `cb_${r.id}_${uid()}`,
       name: r.name,
       calories: r.perServing.calories,
@@ -2027,14 +2191,20 @@ function WeekView({ meals, log, setLog, activeProgramKey, target, weeklyBudget, 
           </div>
 
           {d.plannedMeals.length === 0 ? (
-            <button
-              onClick={() => fillDay(d.date)}
-              disabled={filling === d.date}
-              className="w-full flex items-center justify-center gap-1.5 text-xs text-zinc-400 border border-dashed border-zinc-800 rounded-lg py-2"
-            >
-              {filling === d.date ? <Loader2 size={12} className="animate-spin" /> : <BookOpen size={12} />}
-              {filling === d.date ? "Filling…" : "Fill with Cookbook"}
-            </button>
+            hasAnyTarget ? (
+              <button
+                onClick={() => fillDay(d.date)}
+                disabled={filling === d.date}
+                className="w-full flex items-center justify-center gap-1.5 text-xs text-zinc-400 border border-dashed border-zinc-800 rounded-lg py-2"
+              >
+                {filling === d.date ? <Loader2 size={12} className="animate-spin" /> : <BookOpen size={12} />}
+                {filling === d.date ? "Filling…" : "Fill with Cookbook"}
+              </button>
+            ) : (
+              <div className="text-[11px] text-zinc-600 text-center py-2 border border-dashed border-zinc-800 rounded-lg">
+                Set daily or per-meal targets in Prep → Daily goals to fill this day
+              </div>
+            )
           ) : (
             <div className="space-y-1">
               {d.plannedMeals.map((m) => (
@@ -2063,7 +2233,7 @@ function WeekView({ meals, log, setLog, activeProgramKey, target, weeklyBudget, 
   );
 }
 
-function CookbookTab({ goals, setMeals, setLog, meals, log, activeProgramKey, programStartDates }) {
+function CookbookTab({ goals, mealSlots = [], setMeals, setLog, meals, log, activeProgramKey, programStartDates }) {
   const [view, setView] = useState("generate"); // "generate" | "week"
   const target = {
     calories: Number(goals.calories) || 0,
@@ -2072,14 +2242,23 @@ function CookbookTab({ goals, setMeals, setLog, meals, log, activeProgramKey, pr
     fat: Number(goals.fat) || 0,
   };
   const weeklyBudget = Number(goals.budget) || 0;
-  const hasTargets = target.calories > 0;
+  const usableMealSlots = mealSlots.filter(
+    (s) => (Number(s.protein) || 0) > 0 || (Number(s.carbs) || 0) > 0 || (Number(s.fat) || 0) > 0
+  );
+  const hasPerMealTargets = usableMealSlots.length > 0;
+  const hasTargets = target.calories > 0 || hasPerMealTargets;
 
   const [week, setWeek] = useState(null);
   const [addedDays, setAddedDays] = useState({}); // dayIndex -> true
-  const [openRecipe, setOpenRecipe] = useState(null); // recipe id currently showing instructions
+  const [openRecipe, setOpenRecipe] = useState(null); // recipe key currently showing instructions
 
   const generate = () => {
-    const result = generateCookbookWeek({ target, weeklyBudget });
+    // Prefer Prep's per-meal macro targets when they're set up — this is
+    // what keeps the number of meals and each meal's macros in sync with
+    // what was configured in Prep, rather than only matching the daily total.
+    const result = hasPerMealTargets
+      ? generateCookbookWeekFromMealSlots({ mealSlots: usableMealSlots, weeklyBudget })
+      : generateCookbookWeek({ target, weeklyBudget });
     setWeek(result);
     setAddedDays({});
     setOpenRecipe(null);
@@ -2133,7 +2312,7 @@ function CookbookTab({ goals, setMeals, setLog, meals, log, activeProgramKey, pr
       </div>
 
       {view === "week" && (
-        <WeekView meals={meals} log={log} setLog={setLog} activeProgramKey={activeProgramKey} target={target} weeklyBudget={weeklyBudget} setMeals={setMeals} programStartDate={programStartDates?.[activeProgramKey]} />
+        <WeekView meals={meals} log={log} setLog={setLog} activeProgramKey={activeProgramKey} target={target} mealSlots={usableMealSlots} weeklyBudget={weeklyBudget} setMeals={setMeals} programStartDate={programStartDates?.[activeProgramKey]} />
       )}
 
       {view === "generate" && (
@@ -2143,22 +2322,45 @@ function CookbookTab({ goals, setMeals, setLog, meals, log, activeProgramKey, pr
           <BookOpen size={16} className="text-orange-500" /> Weekly cookbook & grocery list
         </div>
         <p className="text-xs text-zinc-500 mt-1">
-          Builds entirely offline — no live AI call. Picks two daily meal combos that best fit your macro targets (from Prep → Daily goals), assigns one to 4 days and one to 3 days for realistic batch cooking, and gives you a grocery list and cooking instructions for the whole week. Several recipes are modeled on real pro bodybuilder diets — Ronnie Coleman, Kevin Levrone, Flex Wheeler, and Kai Greene all repeated a handful of staple meals rather than eating something different every day, which is exactly the batch-prep approach this builds.
+          Builds entirely offline — no live AI call. {hasPerMealTargets
+            ? `Matches each of your ${usableMealSlots.length} Per-meal targets (from Prep → Daily goals) to the single best-fitting recipe for that meal's own protein/carb/fat — not just the daily total — then picks two daily combos`
+            : "Picks two daily meal combos that best fit your daily macro target (from Prep → Daily goals)"}, assigns one to 4 days and one to 3 days for realistic batch cooking, and gives you a grocery list and cooking instructions for the whole week. Several recipes are modeled on real pro bodybuilder diets — Ronnie Coleman, Kevin Levrone, Flex Wheeler, and Kai Greene all repeated a handful of staple meals rather than eating something different every day, which is exactly the batch-prep approach this builds.
         </p>
+        {!hasPerMealTargets && (
+          <p className="text-[11px] text-orange-500/80 mt-2 flex gap-1.5">
+            <Info size={12} className="shrink-0 mt-0.5" />
+            Set up Per-meal targets in Prep → Daily goals for meal-by-meal macro accuracy instead of just an overall daily fit.
+          </p>
+        )}
       </div>
 
       {!hasTargets && (
-        <EmptyState icon={BookOpen} title="Set your goals first" body="Head to Prep → Daily goals and fill in calories/macros, then come back here." />
+        <EmptyState icon={BookOpen} title="Set your goals first" body="Head to Prep → Daily goals and fill in calories/macros (or set up Per-meal targets), then come back here." />
       )}
 
       {hasTargets && (
         <>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 space-y-2">
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-zinc-400">
-              <span>Daily target</span><span className="text-right">{target.calories} kcal</span>
-              <span>Protein / Carb / Fat</span><span className="text-right">{target.protein}g / {target.carbs}g / {target.fat}g</span>
-              {weeklyBudget > 0 && <><span>Weekly budget</span><span className="text-right">${weeklyBudget.toFixed(2)}</span></>}
-            </div>
+            {hasPerMealTargets ? (
+              <div className="space-y-1">
+                {usableMealSlots.map((s) => (
+                  <div key={s.id} className="grid grid-cols-2 gap-x-3 text-xs text-zinc-400">
+                    <span className="truncate">{s.label}</span>
+                    <span className="text-right">{s.protein || 0}g / {s.carbs || 0}g / {s.fat || 0}g</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-zinc-400">
+                <span>Daily target</span><span className="text-right">{target.calories} kcal</span>
+                <span>Protein / Carb / Fat</span><span className="text-right">{target.protein}g / {target.carbs}g / {target.fat}g</span>
+              </div>
+            )}
+            {weeklyBudget > 0 && (
+              <div className="grid grid-cols-2 gap-x-3 text-xs text-zinc-400 pt-1 border-t border-zinc-800">
+                <span>Weekly budget</span><span className="text-right">${weeklyBudget.toFixed(2)}</span>
+              </div>
+            )}
             <button onClick={generate} className="w-full bg-orange-600 text-zinc-950 font-semibold rounded-lg py-2.5 text-sm">
               {week ? "Regenerate" : "Build my week"}
             </button>
@@ -2200,15 +2402,41 @@ function CookbookTab({ goals, setMeals, setLog, meals, log, activeProgramKey, pr
                   );
                 })}
               </div>
-              <p className="text-[11px] text-zinc-600">Combo A (Mon/Wed/Fri/Sun) and Combo B (Tue/Thu/Sat) are each a fixed breakfast+lunch+dinner+snack — cook each one twice a week, not seven different meals.</p>
+              <p className="text-[11px] text-zinc-600">
+                {week.perMealMode
+                  ? `Combo A (Mon/Wed/Fri/Sun) and Combo B (Tue/Thu/Sat) each have one recipe per meal you set up in Prep (${week.slotLabels.length} meals) — cook each combo twice a week, not seven different days.`
+                  : "Combo A (Mon/Wed/Fri/Sun) and Combo B (Tue/Thu/Sat) are each a fixed breakfast+lunch+dinner+snack — cook each one twice a week, not seven different meals."}
+              </p>
 
               <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide pt-1">Combo A meals</div>
               <div className="space-y-2">
-                {week.comboA.recipes.map((r) => <RecipeCard key={r.id} recipe={r} open={openRecipe === r.id} onToggle={() => setOpenRecipe(openRecipe === r.id ? null : r.id)} />)}
+                {week.comboA.recipes.map((r, i) => {
+                  const key = `${r.id}-A-${i}`;
+                  return (
+                    <RecipeCard
+                      key={key}
+                      recipe={r}
+                      slotLabel={week.slotLabels?.[i]}
+                      open={openRecipe === key}
+                      onToggle={() => setOpenRecipe(openRecipe === key ? null : key)}
+                    />
+                  );
+                })}
               </div>
               <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide pt-1">Combo B meals</div>
               <div className="space-y-2">
-                {week.comboB.recipes.map((r) => <RecipeCard key={r.id} recipe={r} open={openRecipe === r.id} onToggle={() => setOpenRecipe(openRecipe === r.id ? null : r.id)} />)}
+                {week.comboB.recipes.map((r, i) => {
+                  const key = `${r.id}-B-${i}`;
+                  return (
+                    <RecipeCard
+                      key={key}
+                      recipe={r}
+                      slotLabel={week.slotLabels?.[i]}
+                      open={openRecipe === key}
+                      onToggle={() => setOpenRecipe(openRecipe === key ? null : key)}
+                    />
+                  );
+                })}
               </div>
 
               <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5">
@@ -2241,11 +2469,14 @@ function CookbookTab({ goals, setMeals, setLog, meals, log, activeProgramKey, pr
   );
 }
 
-function RecipeCard({ recipe, open, onToggle }) {
+function RecipeCard({ recipe, slotLabel, open, onToggle }) {
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
       <button onClick={onToggle} className="w-full flex items-center justify-between p-3">
         <div className="text-left">
+          {slotLabel && (
+            <div className="text-[10px] font-semibold text-teal-500 uppercase tracking-wide mb-0.5">{slotLabel}</div>
+          )}
           <div className="font-medium text-sm">{recipe.name}</div>
           <div className="text-xs text-zinc-500 flex items-center gap-1.5 flex-wrap">
             <span>{recipe.perServing.calories} kcal ·</span>
