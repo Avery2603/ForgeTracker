@@ -5,7 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/forge-tracker-pwa/', // must match your GitHub repo name
+  base: '/',
   plugins: [
     react(),
     tailwindcss(),
@@ -15,18 +15,25 @@ export default defineConfig({
       manifest: {
         name: 'FORGE',
         short_name: 'FORGE',
-        description: 'FORGE — training, meals, and macro tracker',
+        description: 'FORGE - nutrition · training log',
         theme_color: '#09090b',
         background_color: '#09090b',
         display: 'standalone',
-        start_url: '/forge-tracker-pwa/',
-        scope: '/forge-tracker-pwa/',
+        start_url: '/',
+        scope: '/',
         icons: [
-          { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
-          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-        ],
-      },
-    }),
-  ],
+          {
+            src: 'icon-192.png',
+            sizes: '192x192',
+            type: 'image/png'
+          },
+          {
+            src: 'icon-512.png',
+            sizes: '512x512',
+            type: 'image/png'
+          }
+        ]
+      }
+    })
+  ]
 })
