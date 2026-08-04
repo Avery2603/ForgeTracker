@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Check, X, Plus, Trash2, ChevronRight, ChevronDown, Dumbbell, UtensilsCrossed, ClipboardList, DollarSign, RotateCcw, Loader2, Flame, Info, BookOpen, Bell, ShoppingCart, Search, SlidersHorizontal, Clock, Trophy, TrendingUp } from "lucide-react";
+import { Check, X, Plus, Trash2, ChevronRight, ChevronDown, Dumbbell, UtensilsCrossed, ClipboardList, DollarSign, RotateCcw, Loader2, Flame, Info, BookOpen, Bell, ShoppingCart, Search, SlidersHorizontal, Clock, Trophy, TrendingUp, AlertTriangle } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Storage — localStorage-backed persistence.
