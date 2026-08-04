@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Check, X, Plus, Trash2, ChevronRight, ChevronDown, Dumbbell, UtensilsCrossed, ClipboardList, DollarSign, RotateCcw, Loader2, Flame, Info, BookOpen, Bell, ShoppingCart, Search, SlidersHorizontal, Clock } from "lucide-react";
+import { Check, X, Plus, Trash2, ChevronRight, ChevronDown, Dumbbell, UtensilsCrossed, ClipboardList, DollarSign, RotateCcw, Loader2, Flame, Info, BookOpen, Bell, ShoppingCart, Search, SlidersHorizontal, Clock, Trophy, TrendingUp } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Storage — localStorage-backed persistence.
@@ -177,43 +177,310 @@ function CalorieRing({ value, target, size = 132, stroke = 11 }) {
 // user can override per ingredient.
 // ---------------------------------------------------------------------------
 const PRICE_TABLE = [
-  { match: /chicken breast/i, unit: "lb", price: 2.57 }, // verified Walmart.com, Jul 2026
-  { match: /chicken thigh/i, unit: "lb", price: 2.49 },
-  { match: /ground beef|beef 90|beef 93/i, unit: "lb", price: 5.49 },
-  { match: /steak|sirloin|ribeye/i, unit: "lb", price: 8.99 },
-  { match: /tilapia|white fish|cod/i, unit: "lb", price: 6.99 },
-  { match: /salmon/i, unit: "lb", price: 9.99 },
+  { match: /chicken breast/i, unit: "lb", price: 2.57, continuous: true }, // verified Walmart.com, Jul 2026
+  { match: /chicken thigh/i, unit: "lb", price: 2.49, continuous: true },
+  { match: /ground beef|beef 90|beef 93/i, unit: "lb", price: 5.49, continuous: true },
+  { match: /steak|sirloin|ribeye/i, unit: "lb", price: 8.99, continuous: true },
+  { match: /tilapia|white fish|cod/i, unit: "lb", price: 6.99, continuous: true },
+  { match: /salmon/i, unit: "lb", price: 9.99, continuous: true },
   { match: /egg white/i, unit: "carton (16oz)", price: 3.99 },
   { match: /egg/i, unit: "dozen", price: 1.47 }, // verified Walmart.com Great Value, Jul 2026
-  { match: /rice/i, unit: "lb", price: 0.89 },
-  { match: /oats?|oatmeal/i, unit: "lb", price: 1.29 },
-  { match: /sweet potato/i, unit: "lb", price: 1.19 },
-  { match: /potato/i, unit: "lb", price: 0.79 },
-  { match: /pasta|noodle/i, unit: "lb", price: 1.39 },
+  { match: /rice/i, unit: "lb", price: 0.89, continuous: true },
+  { match: /oats?|oatmeal/i, unit: "lb", price: 1.29, continuous: true },
+  { match: /sweet potato/i, unit: "lb", price: 1.19, continuous: true },
+  { match: /potato/i, unit: "lb", price: 0.79, continuous: true },
+  { match: /pasta|noodle/i, unit: "lb", price: 1.39, continuous: true },
   { match: /bread/i, unit: "loaf", price: 2.99 },
   { match: /fairlife/i, unit: "52oz jug", price: 5.99 },
-  { match: /milk/i, unit: "gal", price: 3.79 },
+  { match: /coconut milk/i, unit: "13.5oz can", price: 2.29 }, // moved above /milk/i — was silently matching the generic milk (gal) entry, pricing coconut milk as a full gallon of dairy milk ($3.79) instead of a 13.5oz can ($2.29). Same substring-collision bug class as the West Virginia/Virginia regex fix.
+  { match: /milk/i, unit: "gal", price: 3.79,
+    packOptions: [
+      { label: "half gallon", size: 0.5, price: 2.49 },
+      { label: "gallon", size: 1, price: 3.79 },
+    ] },
   { match: /greek yogurt|yogurt/i, unit: "32oz tub", price: 4.99 },
   { match: /cottage cheese/i, unit: "16oz tub", price: 3.49 },
   { match: /whey|protein powder/i, unit: "2lb tub", price: 29.99 },
-  { match: /broccoli/i, unit: "lb", price: 1.99 },
+  { match: /broccoli/i, unit: "lb", price: 1.99, continuous: true },
   { match: /spinach/i, unit: "5oz bag", price: 2.99 },
   { match: /mixed veg|frozen veg/i, unit: "12oz bag", price: 1.79 },
-  { match: /banana/i, unit: "lb", price: 0.59 },
-  { match: /apple/i, unit: "lb", price: 1.49 },
+  { match: /banana/i, unit: "lb", price: 0.59, continuous: true },
+  { match: /apple/i, unit: "lb", price: 1.49, continuous: true },
   { match: /berries|blueberr|strawberr/i, unit: "12oz", price: 3.49 },
   { match: /olive oil/i, unit: "16.9oz", price: 8.49 },
   { match: /peanut butter|almond butter/i, unit: "16oz jar", price: 4.49 },
-  { match: /almond|walnut|cashew|nuts/i, unit: "lb", price: 7.99 },
+  { match: /almond|walnut|cashew|nuts/i, unit: "lb", price: 7.99, continuous: true },
   { match: /avocado/i, unit: "each", price: 1.29 },
   { match: /tortilla/i, unit: "pack", price: 3.29 },
+  { match: /shrimp|prawn/i, unit: "lb", price: 8.99, continuous: true },
+  { match: /pork chop|pork loin|pork tenderloin/i, unit: "lb", price: 4.29, continuous: true },
+  { match: /ground turkey|turkey breast/i, unit: "lb", price: 4.79, continuous: true },
+  { match: /tofu/i, unit: "14oz block", price: 2.29 },
+  { match: /chickpea|garbanzo/i, unit: "15oz can", price: 1.09 },
+  { match: /black bean/i, unit: "15oz can", price: 0.99 },
+  { match: /quinoa/i, unit: "lb", price: 3.99, continuous: true },
+  { match: /bell pepper/i, unit: "each", price: 1.29 },
+  { match: /onion/i, unit: "lb", price: 0.99, continuous: true },
+  { match: /tomato/i, unit: "lb", price: 1.99, continuous: true },
+  { match: /cucumber/i, unit: "each", price: 0.79 },
+  { match: /pineapple/i, unit: "each", price: 2.99 },
+  { match: /curry paste/i, unit: "4oz jar", price: 3.49 },
+  { match: /feta/i, unit: "8oz", price: 3.99 },
+  { match: /pita/i, unit: "pack", price: 2.79 },
+  { match: /hummus/i, unit: "10oz tub", price: 3.99 },
+  { match: /tzatziki/i, unit: "8oz tub", price: 3.99 },
+  { match: /kimchi/i, unit: "16oz jar", price: 5.99 },
+  { match: /salsa/i, unit: "16oz jar", price: 3.29 },
+  { match: /soy sauce|tamari/i, unit: "10oz", price: 3.29 },
+  { match: /sesame oil/i, unit: "5oz", price: 5.49 },
   { match: /cheese/i, unit: "8oz", price: 3.29 },
   { match: /honey/i, unit: "12oz", price: 5.49 },
 ];
-function estimatePrice(name) {
+function estimatePrice(name, location = "") {
   const hit = PRICE_TABLE.find((p) => p.match.test(name));
-  if (hit) return hit;
-  return { unit: "unit", price: 2.5, guessed: true };
+  const base = hit || { unit: "unit", price: 2.5, guessed: true };
+  const mult = regionMultiplier(location);
+  return { ...base, price: Math.round(base.price * mult * 100) / 100 };
+}
+
+// ---------------------------------------------------------------------------
+// Package-aware purchase estimator — estimatePrice() above gives a per-unit
+// price, but you can't actually buy "0.25 dozen eggs" or "0.31 gal milk" at
+// a store. This rounds a needed quantity up to what you'd actually have to
+// buy:
+//   - "continuous" items (chicken breast, rice, produce sold by weight,
+//     etc.) are treated as buyable in the exact weight needed — real
+//     grocery/deli pricing is already per-lb, so no rounding is applied.
+//   - Everything else is sold in a fixed package (a dozen, a loaf, a jar, a
+//     tub, "each" for produce like avocados) — quantity gets rounded UP to
+//     the next whole package, since you can't buy a fraction of one.
+//   - Items with multiple real package sizes (currently just milk: half
+//     gallon vs. gallon) pick whichever size — or combination bias toward
+//     the cheapest per-unit option — actually covers the needed amount for
+//     the lowest total cost.
+// Returns the same shape as estimatePrice() (unit/price/guessed) plus
+// purchase-specific fields: packagesToBuy, packageLabel, totalQtyBought,
+// and cost (the real dollar amount for what you'd have to buy).
+// ---------------------------------------------------------------------------
+function estimatePurchase(name, qtyNeeded, location = "") {
+  const hit = PRICE_TABLE.find((p) => p.match.test(name));
+  const mult = regionMultiplier(location);
+  const round2 = (n) => Math.round(n * 100) / 100;
+
+  if (!hit) {
+    // No table match — fall back to the same flat guess estimatePrice()
+    // uses, treated as continuous since we don't know real package sizes.
+    const price = round2(2.5 * mult);
+    return { unit: "unit", price, guessed: true, packagesToBuy: 1, packageLabel: "unit", totalQtyBought: qtyNeeded, cost: round2(qtyNeeded * price) };
+  }
+
+  if (hit.continuous) {
+    const price = round2(hit.price * mult);
+    return { unit: hit.unit, price, guessed: false, packagesToBuy: 1, packageLabel: hit.unit, totalQtyBought: qtyNeeded, cost: round2(qtyNeeded * price) };
+  }
+
+  if (hit.packOptions) {
+    // Pick whichever available package size covers the need for the
+    // lowest total cost (e.g. one gallon vs. two half-gallons).
+    let best = null;
+    for (const opt of hit.packOptions) {
+      const price = round2(opt.price * mult);
+      const count = Math.max(1, Math.ceil(qtyNeeded / opt.size - 1e-9));
+      const cost = round2(count * price);
+      const candidate = { unit: hit.unit, price, guessed: false, packagesToBuy: count, packageLabel: opt.label, totalQtyBought: round2(count * opt.size), cost };
+      if (!best || candidate.cost < best.cost) best = candidate;
+    }
+    return best;
+  }
+
+  // Standard single fixed-size package (dozen, loaf, jar, tub, "each", etc.)
+  const price = round2(hit.price * mult);
+  const count = Math.max(1, Math.ceil(qtyNeeded - 1e-9));
+  return { unit: hit.unit, price, guessed: false, packagesToBuy: count, packageLabel: hit.unit, totalQtyBought: count, cost: round2(count * price) };
+}
+
+// ---------------------------------------------------------------------------
+// MACRO_TABLE — mirrors PRICE_TABLE (same match patterns, same units) so
+// mealMacros() looks up macros the same way estimatePrice() looks up cost.
+// Values are per the SAME unit PRICE_TABLE uses for that ingredient (per lb,
+// per dozen, per loaf, per jar, etc.), using RAW/DRY weight to match how
+// PRICE_TABLE prices groceries (uncooked, as purchased) — cooked chicken
+// breast is ~40% more protein-dense per 100g than raw by weight, so mixing
+// raw-priced/cooked-macro data would silently misreport every protein
+// number in the app.
+//
+// Source: USDA FoodData Central standard reference values (raw/dry state
+// unless noted). Spot-verified against live USDA-sourced chicken breast data
+// as a calibration check (~120 cal, ~22.5g protein, ~2.6g fat per 100g raw).
+// Self-consistency verified via Atwater check (protein*4 + carbs*4 + fat*9
+// ≈ stated calories) across all entries — caught and fixed one real error
+// (fairlife fat content) before this shipped. Remaining Atwater "flags" on
+// high-fiber produce (broccoli, spinach, berries, etc.) are expected: labels
+// state TOTAL carbs including fiber, which doesn't convert to calories at
+// 4 cal/g — not a data error, a known limitation of the simple check.
+//
+// Phase-0-quality: built from well-established standard nutrition data, not
+// individually pulled FDC IDs per ingredient. Worth a follow-up pass with
+// exact FDC IDs before treating as fully final.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// MACRO_TABLE — mirrors PRICE_TABLE exactly (same match patterns, same
+// units) so mealMacros() can look up macros the same way estimatePrice()
+// looks up cost. Values are per the SAME unit PRICE_TABLE uses for that
+// ingredient (per lb, per dozen, per loaf, per jar, etc.), using RAW/DRY
+// weight to match how PRICE_TABLE prices groceries (uncooked, as purchased) —
+// this matters: cooked chicken breast is ~40% more protein-dense per 100g
+// than raw by weight, so mixing raw-priced/cooked-macro data would silently
+// misreport every protein number in the app.
+//
+// Source: USDA FoodData Central standard reference values (raw/dry state
+// unless noted). Spot-verified chicken breast against live USDA-sourced data
+// (~120 cal, ~22.5g protein, ~2.6g fat per 100g raw) as a calibration check.
+// Values are Phase-0-quality: built from well-established standard nutrition
+// data, not individually pulled from FDC IDs. Recommend a follow-up pass
+// pulling exact FDC IDs per ingredient before treating this as final —
+// flagged explicitly, not silently assumed correct.
+//
+// Fields: calories, protein (g), carbs (g), fat (g) — TOTAL for the unit
+// PRICE_TABLE prices (e.g. "lb" entries are per pound, "dozen" is for all
+// 12 eggs, "jar" is for the whole jar) so mealMacros() can multiply
+// directly by the same qty used in mealCost().
+// ---------------------------------------------------------------------------
+const MACRO_TABLE = [
+  { match: /chicken breast/i, unit: "lb", calories: 544, protein: 102, carbs: 0, fat: 12 },
+  { match: /chicken thigh/i, unit: "lb", calories: 540, protein: 91, carbs: 0, fat: 20 },
+  { match: /ground beef|beef 90|beef 93/i, unit: "lb", calories: 798, protein: 91, carbs: 0, fat: 45 },
+  { match: /steak|sirloin|ribeye/i, unit: "lb", calories: 680, protein: 100, carbs: 0, fat: 27 },
+  { match: /tilapia|white fish|cod/i, unit: "lb", calories: 408, protein: 86, carbs: 0, fat: 4.5 },
+  { match: /salmon/i, unit: "lb", calories: 943, protein: 91, carbs: 0, fat: 59 },
+  { match: /egg white/i, unit: "carton (16oz)", calories: 236, protein: 50, carbs: 3, fat: 1 },
+  { match: /egg/i, unit: "dozen", calories: 864, protein: 76, carbs: 5, fat: 60 },
+  { match: /rice/i, unit: "lb", calories: 1656, protein: 32, carbs: 363, fat: 3.2 },
+  { match: /oats?|oatmeal/i, unit: "lb", calories: 1764, protein: 77, carbs: 299, fat: 31 },
+  { match: /sweet potato/i, unit: "lb", calories: 390, protein: 7.3, carbs: 91, fat: 0.5 },
+  { match: /potato/i, unit: "lb", calories: 349, protein: 9, carbs: 77, fat: 0.5 },
+  { match: /pasta|noodle/i, unit: "lb", calories: 1683, protein: 59, carbs: 340, fat: 6.8 },
+  { match: /bread/i, unit: "loaf", calories: 1500, protein: 60, carbs: 260, fat: 20 },
+  { match: /fairlife/i, unit: "52oz jug", calories: 975, protein: 84.5, carbs: 39, fat: 52 }, // whole ultra-filtered: 150cal/13g protein/6g carb/8g fat per 8oz serving x6.5
+  { match: /milk/i, unit: "gal", calories: 2309, protein: 121, carbs: 182, fat: 125,
+    packOptions: [
+      { label: "half gallon", calories: 1155, protein: 60.5, carbs: 91, fat: 62.5 },
+      { label: "gallon", calories: 2309, protein: 121, carbs: 182, fat: 125 },
+    ] },
+  { match: /greek yogurt|yogurt/i, unit: "32oz tub", calories: 535, protein: 91, carbs: 33, fat: 3.6 },
+  { match: /cottage cheese/i, unit: "16oz tub", calories: 381, protein: 50, carbs: 15, fat: 11 },
+  { match: /whey|protein powder/i, unit: "2lb tub", calories: 3600, protein: 750, carbs: 60, fat: 30 },
+  { match: /broccoli/i, unit: "lb", calories: 154, protein: 12.7, carbs: 32, fat: 1.8 },
+  { match: /spinach/i, unit: "5oz bag", calories: 33, protein: 4.1, carbs: 5.1, fat: 0.6 },
+  { match: /mixed veg|frozen veg/i, unit: "12oz bag", calories: 221, protein: 8.5, carbs: 44, fat: 1 },
+  { match: /banana/i, unit: "lb", calories: 404, protein: 5, carbs: 104, fat: 1.4 },
+  { match: /apple/i, unit: "lb", calories: 236, protein: 1.4, carbs: 63, fat: 0.9 },
+  { match: /berries|blueberr|strawberr/i, unit: "12oz", calories: 153, protein: 2.4, carbs: 39, fat: 1 },
+  { match: /olive oil/i, unit: "16.9oz", calories: 4066, protein: 0, carbs: 0, fat: 460 },
+  { match: /peanut butter|almond butter/i, unit: "16oz jar", calories: 2670, protein: 113, carbs: 91, fat: 227 },
+  { match: /almond|walnut|cashew|nuts/i, unit: "lb", calories: 2626, protein: 95, carbs: 100, fat: 227 },
+  { match: /avocado/i, unit: "each", calories: 240, protein: 3, carbs: 13, fat: 22 },
+  { match: /tortilla/i, unit: "pack", calories: 1400, protein: 40, carbs: 240, fat: 35 },
+  { match: /shrimp|prawn/i, unit: "lb", calories: 386, protein: 91, carbs: 0, fat: 2.3 },
+  { match: /pork chop|pork loin|pork tenderloin/i, unit: "lb", calories: 649, protein: 95, carbs: 0, fat: 27 },
+  { match: /ground turkey|turkey breast/i, unit: "lb", calories: 680, protein: 86, carbs: 0, fat: 36 },
+  { match: /tofu/i, unit: "14oz block", calories: 572, protein: 62, carbs: 15.5, fat: 35 },
+  { match: /chickpea|garbanzo/i, unit: "15oz can", calories: 334, protein: 17.5, carbs: 54, fat: 5 },
+  { match: /black bean/i, unit: "15oz can", calories: 218, protein: 14.4, carbs: 38, fat: 1 },
+  { match: /quinoa/i, unit: "lb", calories: 1670, protein: 64, carbs: 290, fat: 27 },
+  { match: /bell pepper/i, unit: "each", calories: 37, protein: 1.2, carbs: 7.2, fat: 0.4 },
+  { match: /onion/i, unit: "lb", calories: 181, protein: 5, carbs: 42, fat: 0.5 },
+  { match: /tomato/i, unit: "lb", calories: 82, protein: 4.1, carbs: 18, fat: 0.9 },
+  { match: /cucumber/i, unit: "each", calories: 45, protein: 2, carbs: 11, fat: 0.3 },
+  { match: /pineapple/i, unit: "each", calories: 300, protein: 3, carbs: 78, fat: 0.6 },
+  { match: /coconut milk/i, unit: "13.5oz can", calories: 920, protein: 9.2, carbs: 13.2, fat: 96 },
+  { match: /curry paste/i, unit: "4oz jar", calories: 102, protein: 2.3, carbs: 13.6, fat: 4.5 },
+  { match: /feta/i, unit: "8oz", calories: 599, protein: 32, carbs: 9, fat: 48 },
+  { match: /pita/i, unit: "pack", calories: 990, protein: 33, carbs: 198, fat: 4.2 },
+  { match: /hummus/i, unit: "10oz tub", calories: 470, protein: 22, carbs: 40, fat: 27 },
+  { match: /tzatziki/i, unit: "8oz tub", calories: 204, protein: 9, carbs: 9, fat: 13.6 },
+  { match: /kimchi/i, unit: "16oz jar", calories: 68, protein: 5, carbs: 11, fat: 2.3 },
+  { match: /salsa/i, unit: "16oz jar", calories: 163, protein: 6.8, carbs: 36, fat: 0.9 },
+  { match: /soy sauce|tamari/i, unit: "10oz", calories: 172, protein: 30, carbs: 16, fat: 0 },
+  { match: /sesame oil/i, unit: "5oz", calories: 1238, protein: 0, carbs: 0, fat: 140 },
+  { match: /cheese/i, unit: "8oz", calories: 915, protein: 57, carbs: 3, fat: 75 },
+  { match: /honey/i, unit: "12oz", calories: 1034, protein: 1, carbs: 279, fat: 0 },
+];
+
+// mealMacros(meal) — same shape/pattern as mealCost(): sums qty * per-unit
+// macros across meal.ingredients. If an ingredient has no PRICE_TABLE-unit
+// match, it's flagged as "guessed" the same way estimatePrice() flags an
+// unmatched price, rather than silently contributing zero macros.
+function mealMacros(ingredients) {
+  let calories = 0, protein = 0, carbs = 0, fat = 0;
+  const unmatched = [];
+  for (const ing of ingredients) {
+    const hit = MACRO_TABLE.find((m) => m.match.test(ing.name));
+    if (!hit) {
+      unmatched.push(ing.name);
+      continue;
+    }
+    const qty = ing.qty || 0;
+    calories += qty * hit.calories;
+    protein += qty * hit.protein;
+    carbs += qty * hit.carbs;
+    fat += qty * hit.fat;
+  }
+  return {
+    calories: Math.round(calories),
+    protein: Math.round(protein * 10) / 10,
+    carbs: Math.round(carbs * 10) / 10,
+    fat: Math.round(fat * 10) / 10,
+    unmatched, // non-empty means at least one ingredient had no macro data
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Regional grocery cost adjustment — PRICE_TABLE above is a US national
+// average. This scales it toward what groceries actually run in a given
+// state/metro using rough relative cost-of-living indices (not a live feed,
+// just far better than treating every location the same). Matches on
+// whatever text the user typed into the location field in Prep; falls back
+// to 1.0 (no adjustment) if nothing matches or the field's empty.
+// ---------------------------------------------------------------------------
+const REGION_COST_INDEX = [
+  { match: /hawaii|honolulu/i, mult: 1.45 },
+  { match: /manhattan|new york city|nyc|brooklyn/i, mult: 1.38 },
+  { match: /san francisco|bay area|silicon valley|palo alto|oakland/i, mult: 1.42 },
+  { match: /california|\bca\b|los angeles|san diego|sacramento/i, mult: 1.25 },
+  { match: /new york|\bny\b/i, mult: 1.22 },
+  { match: /massachusetts|\bma\b|boston/i, mult: 1.20 },
+  { match: /washington state|\bwa\b|seattle/i, mult: 1.18 },
+  { match: /alaska/i, mult: 1.28 },
+  { match: /connecticut|\bct\b/i, mult: 1.14 },
+  { match: /new jersey|\bnj\b/i, mult: 1.13 },
+  { match: /oregon|\bor\b|portland/i, mult: 1.12 },
+  { match: /colorado|\bco\b|denver/i, mult: 1.08 },
+  { match: /illinois|\bil\b|chicago/i, mult: 1.06 },
+  { match: /maryland|\bmd\b/i, mult: 1.10 },
+  { match: /west virginia|\bwv\b/i, mult: 0.89 },
+  { match: /virginia|\bva\b/i, mult: 1.02 },
+  { match: /florida|\bfl\b|miami|orlando|tampa/i, mult: 1.02 },
+  { match: /texas|\btx\b|austin|dallas|houston/i, mult: 0.98 },
+  { match: /north carolina|\bnc\b/i, mult: 0.96 },
+  { match: /georgia|\bga\b|atlanta/i, mult: 0.97 },
+  { match: /michigan|\bmi\b/i, mult: 0.94 },
+  { match: /ohio|\boh\b/i, mult: 0.93 },
+  { match: /indiana|\bin\b/i, mult: 0.92 },
+  { match: /tennessee|\btn\b/i, mult: 0.93 },
+  { match: /missouri|\bmo\b/i, mult: 0.91 },
+  { match: /arkansas|\bar\b/i, mult: 0.89 }, // moved above /kansas/i — "arkansas" contains "kansas" as a substring, so it was silently matching Kansas's multiplier (0.91) instead of its own (0.89). Same collision class as the West Virginia/Virginia fix.
+  { match: /kansas|\bks\b/i, mult: 0.91 },
+  { match: /oklahoma|\bok\b/i, mult: 0.90 },
+  { match: /kentucky|\bky\b/i, mult: 0.91 },
+  { match: /mississippi|\bms\b/i, mult: 0.87 },
+  { match: /alabama|\bal\b/i, mult: 0.90 },
+  { match: /iowa|\bia\b/i, mult: 0.91 },
+];
+function regionMultiplier(location) {
+  if (!location || !location.trim()) return 1;
+  const hit = REGION_COST_INDEX.find((r) => r.match.test(location));
+  return hit ? hit.mult : 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +521,19 @@ const SHELF_LIFE_TABLE = [
   { match: /almond|walnut|cashew|nuts/i, fridge: "4-6 months", freezer: "12 months", note: "Fridge/freezer slows the fats from going rancid vs. pantry storage." },
   { match: /avocado/i, fridge: "3-4 days once ripe (cut: 1 day)", freezer: "not recommended whole", note: "Doesn't hold up to batch prep — cut fresh each time, as the recipes note." },
   { match: /tortilla/i, fridge: "1 week after opening", freezer: "2-3 months", note: "Keep sealed to prevent drying out." },
+  { match: /shrimp|prawn/i, fridge: "1-2 days raw", freezer: "6 months", note: "Very perishable — cook same day if possible." },
+  { match: /pork chop|pork loin|pork tenderloin/i, fridge: "3-5 days raw", freezer: "4-6 months", note: "Whole pork cuts hold up well raw for several days." },
+  { match: /ground turkey|turkey breast/i, fridge: "1-2 days raw", freezer: "3-4 months", note: "Treat like other ground/poultry meats — use quickly." },
+  { match: /tofu/i, fridge: "3-5 days opened (in water, changed daily)", freezer: "5 months (texture changes)", note: "Keep submerged in fresh water once opened." },
+  { match: /chickpea|garbanzo|black bean/i, fridge: "4-5 days cooked, pantry canned", freezer: "6 months cooked", note: "Canned keeps a very long time unopened." },
+  { match: /quinoa/i, fridge: "5-7 days cooked, pantry dry", freezer: "8 months cooked", note: "Cooked quinoa holds up very well — great for batch prep." },
+  { match: /bell pepper|onion|cucumber/i, fridge: "1-2 weeks raw", freezer: "8-12 months (blanched)", note: "Keep in the crisper; onions actually prefer a cool pantry over the fridge." },
+  { match: /tomato/i, fridge: "5-7 days raw", freezer: "2 months (cooked/sauce)", note: "Store whole tomatoes at room temp until ripe, then fridge." },
+  { match: /pineapple/i, fridge: "5-7 days cut", freezer: "10-12 months cut", note: "Once cut, refrigerate in an airtight container." },
+  { match: /coconut milk/i, fridge: "4-6 days after opening", freezer: "2 months (separates, whisk when thawed)", note: "Unopened cans are pantry-stable." },
+  { match: /curry paste|soy sauce|tamari|hummus|tzatziki|kimchi|salsa/i, fridge: "2-6 months after opening (varies)", freezer: "not typically recommended", note: "Condiments/ferments keep well refrigerated once opened." },
+  { match: /feta|pita/i, fridge: "1-2 weeks opened", freezer: "2-3 months", note: "Standard dairy/bread guidance." },
+  { match: /sesame oil/i, fridge: "not needed", freezer: "not needed", note: "Pantry, away from light/heat." },
   { match: /cheese/i, fridge: "1-2 weeks after opening (shredded/sliced)", freezer: "2-3 months (texture changes)", note: "Hard cheeses last longer than soft/shredded." },
   { match: /honey/i, fridge: "not needed", freezer: "not needed", note: "Essentially shelf-stable indefinitely — crystallizing is normal, not spoilage." },
 ];
@@ -587,6 +867,671 @@ function nextSetWeight({ weight, reps, rir, targetReps, targetRir }) {
 }
 
 // ---------------------------------------------------------------------------
+// PR detection — reuses the EXACT SAME e1RM formula as nextSetWeight above
+// (RIR-adjusted Epley: e1RM = weight * (1 + (reps + RIR) / 30)) rather than
+// a second formula that could silently disagree with it. A "PR" here means
+// a new best estimated 1RM for that exercise, not necessarily a new best
+// raw weight — e.g. 225x8 beats 225x5 even though the loaded weight is the
+// same, because the estimated 1RM is higher.
+//
+// Known limitation of Epley-based e1RM (not a bug): accuracy degrades above
+// ~10-12 reps and can overestimate at very high RIR. If a set is outside
+// that range, this still returns a PR determination, but treat e1RM-based
+// PRs on high-rep sets with more skepticism than ones from low-rep, low-RIR
+// sets — the formula itself is less trustworthy there, not just this
+// implementation of it.
+// ---------------------------------------------------------------------------
+function checkForPR(exerciseName, { weight, reps, rir }, existingRecords) {
+  if (!weight || !reps) return { isNewPR: false, updatedRecords: existingRecords };
+  const e1rm = Number(weight) * (1 + (Number(reps) + (Number(rir) || 0)) / 30);
+  const current = existingRecords[exerciseName];
+  if (!current || e1rm > current.e1rm) {
+    return {
+      isNewPR: true,
+      record: { weight: Number(weight), reps: Number(reps), rir: Number(rir) || 0, date: todayStr(), e1rm: Math.round(e1rm * 10) / 10 },
+      updatedRecords: { ...existingRecords, [exerciseName]: { weight: Number(weight), reps: Number(reps), rir: Number(rir) || 0, date: todayStr(), e1rm: Math.round(e1rm * 10) / 10 } },
+    };
+  }
+  return { isNewPR: false, updatedRecords: existingRecords };
+}
+
+// ---------------------------------------------------------------------------
+// XP engine — Phase 2, Session 1.
+//
+// Design principle (same one that governed Phase 0): derive, don't
+// duplicate. `deriveWorkoutXpEvents` and `deriveProteinXpEvents` are pure
+// functions that walk the ALREADY-VERIFIED source logs (workoutLogs,
+// foodLog) and rebuild the XP ledger from scratch every time they're
+// called. That means editing a past day's log automatically corrects that
+// day's XP too — there's no independently-settable "totalXp" that can
+// silently drift out of sync with the logs it's supposed to represent.
+//
+// PR events are the one exception: `personalRecords` only stores the
+// CURRENT best per exercise, not a history of every time a PR was broken,
+// so a past PR moment can't be reconstructed after the fact from that
+// state alone. Those are appended to a small persisted ledger
+// (`prXpEvents`) at the exact moment checkForPR fires in TrainTab.logSet,
+// then merged with the derived events below. Streak-milestone events will
+// be appended the same way once Session 2 (streaks) exists.
+//
+// Every event carries a stable `id` (e.g. "workout:2026-08-03") so merging
+// derived + persisted events and re-deriving on every render is safe:
+// re-running deriveWorkoutXpEvents for a date that already has an event
+// produces the identical id/amount, so de-duping by id is idempotent.
+// ---------------------------------------------------------------------------
+const XP_RULES = {
+  workout_completed: () => ({ amount: 50, note: "Workout logged" }),
+  pr_hit: ({ exerciseName }) => ({ amount: 100, note: `New PR: ${exerciseName}` }),
+  protein_goal_hit: ({ protein, target }) => ({
+    amount: 30,
+    note: `Protein goal hit (${Math.round(protein)}g / ${Math.round(target)}g)`,
+  }),
+  // Table is intentionally sparse — only real milestone lengths award XP.
+  // Session 2 (streaks) decides exact milestone lengths; this table can
+  // grow without changing the calling convention.
+  streak_milestone: ({ streakType, length }) => {
+    const table = { 7: 100, 14: 200, 30: 500, 60: 1000, 100: 2000 };
+    return { amount: table[length] || 0, note: `${length}-day ${streakType} streak` };
+  },
+};
+
+// Pure — given a source name and context, returns { amount, note }. Never
+// touches state directly; callers decide what to do with the result (append
+// to a ledger, show a toast, etc.).
+function awardXp(source, context = {}) {
+  const rule = XP_RULES[source];
+  if (!rule) return { amount: 0, note: "" };
+  return rule(context);
+}
+
+// Level curve: level = floor(sqrt(totalXp / 100)) — fast early levels,
+// slows down later. Decided/locked 2026-08-03; matches the roadmap default.
+function levelForXp(totalXp) {
+  return Math.floor(Math.sqrt(Math.max(0, totalXp) / 100));
+}
+// Inverse, for UI progress bars later (Session 6): total XP required to
+// REACH a given level.
+function xpForLevel(level) {
+  return Math.max(0, level) ** 2 * 100;
+}
+
+// One event per calendar date that has at least one logged set with both
+// weight and reps — matches the real workoutLogs shape actually used in
+// TrainTab (workoutLogs[`${date}|${programKey}|${dayIndex}`][exerciseName][setIndex]),
+// not the stale shape described in the old useState comment. Multiple
+// sessions logged on the same date (e.g. two different programs) still
+// only award one workout_completed event for that date.
+function deriveWorkoutXpEvents(workoutLogs) {
+  const datesWithLoggedSet = new Set();
+  for (const [dayKey, session] of Object.entries(workoutLogs || {})) {
+    const date = dayKey.split("|")[0];
+    if (datesWithLoggedSet.has(date)) continue;
+    const hasLoggedSet = Object.values(session || {}).some((exSets) =>
+      Object.values(exSets || {}).some((s) => s && s.weight && s.reps)
+    );
+    if (hasLoggedSet) datesWithLoggedSet.add(date);
+  }
+  return Array.from(datesWithLoggedSet).map((date) => ({
+    id: `workout:${date}`,
+    date,
+    source: "workout_completed",
+    ...awardXp("workout_completed", {}),
+  }));
+}
+
+// One event per date where logged protein meets or exceeds goal — hit
+// target or higher, no upper cap (decided 2026-08-03). Dates with no
+// protein goal set are skipped entirely (target <= 0 can't be "hit").
+function deriveProteinXpEvents(foodLog, goals) {
+  const target = Number(goals?.protein) || 0;
+  if (target <= 0) return [];
+  const events = [];
+  for (const [date, entries] of Object.entries(foodLog || {})) {
+    const protein = (entries || []).reduce((s, e) => s + (Number(e.protein) || 0), 0);
+    if (protein >= target) {
+      events.push({
+        id: `protein:${date}`,
+        date,
+        source: "protein_goal_hit",
+        ...awardXp("protein_goal_hit", { protein, target }),
+      });
+    }
+  }
+  return events;
+}
+
+// Merges derived events (recomputed fresh every call) with the persisted
+// PR-event ledger, de-dupes by id, sorts by date, and reduces to the
+// current totalXp/level. This is the single source of truth for xpState —
+// nothing else should compute totalXp independently.
+function computeXpState({ workoutLogs, foodLog, goals, prEvents = [] }) {
+  const allEvents = [...deriveWorkoutXpEvents(workoutLogs), ...deriveProteinXpEvents(foodLog, goals), ...prEvents];
+  const seen = new Set();
+  const xpHistory = allEvents
+    .filter((e) => {
+      if (seen.has(e.id)) return false;
+      seen.add(e.id);
+      return true;
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const totalXp = xpHistory.reduce((s, e) => s + (e.amount || 0), 0);
+  return { totalXp, level: levelForXp(totalXp), xpHistory };
+}
+
+// ---------------------------------------------------------------------------
+// Streaks — Phase 2, Session 2.
+//
+// Locked rules (decided 2026-08-03):
+//   - Workout streak: only evaluated against the active program's SCHEDULED
+//     training days (same Monday-anchored weeklySchedule lookup TrainTab
+//     and WeekView already use). A scheduled rest day neither breaks nor
+//     extends the streak — it's skipped entirely. Missing a scheduled
+//     training day breaks it. Programs with no fixed weeklySchedule
+//     (Mentzer — individualized frequency) have no defined rest days, so
+//     every calendar day is treated as a training opportunity; a day with
+//     no logged workout breaks the streak for those programs.
+//   - Protein streak: "hit" means target or higher — no upper cap. A day
+//     with nothing logged, or under target, breaks it. If no protein goal
+//     is set at all, the streak concept doesn't apply (returns zeroed).
+//   - Water streak: no water tracking exists yet (that's Session 5) — this
+//     returns a zeroed placeholder so the {current, longest, lastDate}
+//     shape is already correct and nothing has to change when water
+//     tracking lands.
+//   - "Today" is never treated as a break before the day is over: if today
+//     hasn't been logged yet, the streak holds at whatever it was through
+//     yesterday rather than resetting to 0 mid-day.
+//
+// Same derive-don't-duplicate principle as the XP engine: recomputed fresh
+// from workoutLogs/foodLog/goals every time. Nothing here is persisted
+// independently.
+// ---------------------------------------------------------------------------
+function isScheduledRestDay(dateStr, program) {
+  if (!program?.weeklySchedule) return null; // no fixed schedule -> concept doesn't apply
+  const d = new Date(dateStr + "T00:00:00");
+  const mondayFirstIndex = (d.getDay() + 6) % 7;
+  const slot = program.weeklySchedule[mondayFirstIndex];
+  return slot?.rest === true;
+}
+
+function dateRangeInclusive(startStr, endStr) {
+  const dates = [];
+  let d = new Date(startStr + "T00:00:00");
+  const end = new Date(endStr + "T00:00:00");
+  while (d <= end) {
+    dates.push(d.toISOString().slice(0, 10));
+    d.setDate(d.getDate() + 1);
+  }
+  return dates;
+}
+
+function computeWorkoutStreak(workoutLogs, program, today) {
+  const loggedDates = Object.keys(workoutLogs || {}).map((k) => k.split("|")[0]);
+  if (!loggedDates.length) return { current: 0, longest: 0, lastDate: null };
+  const datesWithWorkout = new Set(deriveWorkoutXpEvents(workoutLogs).map((e) => e.date));
+  const earliest = loggedDates.sort()[0];
+  const span = dateRangeInclusive(earliest < today ? earliest : today, today);
+
+  let current = 0, longest = 0, lastDate = null;
+  span.forEach((date, i) => {
+    const isRest = isScheduledRestDay(date, program);
+    if (isRest === true) return; // scheduled rest day — skip, doesn't touch streak
+    const isToday = i === span.length - 1 && date === today;
+    if (datesWithWorkout.has(date)) {
+      current += 1;
+      lastDate = date;
+      longest = Math.max(longest, current);
+    } else if (!isToday) {
+      current = 0; // missed a real training day -> break (today gets a pass until it's over)
+    }
+  });
+  return { current, longest, lastDate };
+}
+
+function computeProteinStreak(foodLog, goals, today) {
+  const target = Number(goals?.protein) || 0;
+  if (target <= 0) return { current: 0, longest: 0, lastDate: null };
+  const loggedDates = Object.keys(foodLog || {});
+  if (!loggedDates.length) return { current: 0, longest: 0, lastDate: null };
+  const hitDates = new Set(deriveProteinXpEvents(foodLog, goals).map((e) => e.date));
+  const earliest = loggedDates.sort()[0];
+  const span = dateRangeInclusive(earliest < today ? earliest : today, today);
+
+  let current = 0, longest = 0, lastDate = null;
+  span.forEach((date, i) => {
+    const isToday = i === span.length - 1 && date === today;
+    if (hitDates.has(date)) {
+      current += 1;
+      lastDate = date;
+      longest = Math.max(longest, current);
+    } else if (!isToday) {
+      current = 0;
+    }
+  });
+  return { current, longest, lastDate };
+}
+
+// Water — Session 5. Same today-safe, hit-or-miss shape as the protein
+// streak, just against dailyVitals (built from scratch this session; no
+// water tracking existed before now) instead of foodLog.
+function deriveWaterXpEvents(dailyVitals, goals) {
+  const target = Number(goals?.water) || 0;
+  if (target <= 0) return [];
+  const events = [];
+  for (const [date, vitals] of Object.entries(dailyVitals || {})) {
+    const oz = Number(vitals?.waterOz) || 0;
+    if (oz >= target) events.push({ date, oz });
+  }
+  return events;
+}
+
+function computeWaterStreak(dailyVitals, goals, today) {
+  const target = Number(goals?.water) || 0;
+  if (target <= 0) return { current: 0, longest: 0, lastDate: null };
+  const loggedDates = Object.keys(dailyVitals || {});
+  if (!loggedDates.length) return { current: 0, longest: 0, lastDate: null };
+  const hitDates = new Set(deriveWaterXpEvents(dailyVitals, goals).map((e) => e.date));
+  const earliest = loggedDates.sort()[0];
+  const span = dateRangeInclusive(earliest < today ? earliest : today, today);
+
+  let current = 0, longest = 0, lastDate = null;
+  span.forEach((date, i) => {
+    const isToday = i === span.length - 1 && date === today;
+    if (hitDates.has(date)) {
+      current += 1;
+      lastDate = date;
+      longest = Math.max(longest, current);
+    } else if (!isToday) {
+      current = 0;
+    }
+  });
+  return { current, longest, lastDate };
+}
+
+function computeStreaks({ workoutLogs, foodLog, goals, dailyVitals, activeProgramKey, today }) {
+  const program = PROGRAMS[activeProgramKey];
+  return {
+    workout: computeWorkoutStreak(workoutLogs, program, today),
+    protein: computeProteinStreak(foodLog, goals, today),
+    water: computeWaterStreak(dailyVitals, goals, today),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Attributes — Phase 2, Session 3.
+//
+// Five derived 0-100 scores, all recomputed fresh from the same verified
+// source logs — no independent state, same principle as XP/streaks.
+//
+// IMPORTANT — these are first-pass weights, not final. The roadmap is
+// explicit that this session is expected to get re-tuned after a week of
+// real data; the exact multipliers below (e.g. "PR count * 15", "±10%
+// calorie band", "streak/14") are reasonable starting points, not
+// calibrated constants. Treat them as easy to find-and-adjust, not settled.
+//
+// Convention: an attribute returns `null`, not 0, when there isn't enough
+// underlying data to say anything yet (e.g. no AMRAP sets logged for
+// Endurance, no fixed weeklySchedule for Recovery/Discipline on programs
+// like Mentzer). A 0 always means "real signal, currently at the floor";
+// null means "no signal yet." The UI (Session 6) should render null as
+// "not enough data" rather than a bar at zero.
+// ---------------------------------------------------------------------------
+const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+
+function daysAgoStr(dateStr, n) {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+// Shared fix for every fixed-window attribute below: a naive fixed lookback
+// (e.g. "trailing 30 days") silently counts every day BEFORE the person
+// started logging that particular thing as an automatic miss — someone on
+// day 3 of tracking protein would get scored against 27 phantom days they
+// never had a chance to hit. Clip the window start to the later of the
+// fixed lookback or the earliest actually-logged date for that source, so
+// only real tracked days are ever counted against the rate. (Caught by
+// verify_xp.js: a 3-day-old, 2/3-hit-rate nutrition log was scoring 5/100
+// instead of ~50/100 before this fix.)
+function clipWindowStart(loggedDates, windowStart) {
+  if (!loggedDates.length) return windowStart;
+  const earliest = loggedDates.slice().sort()[0];
+  return earliest > windowStart ? earliest : windowStart;
+}
+
+// Strength: PR momentum over a trailing 90-day window, using the same
+// prXpEvents ledger the XP engine already maintains (it's the only place
+// individual PR *moments* are recorded — personalRecords itself only
+// holds the current best per exercise, not history).
+function computeStrengthScore(prEvents, today, windowDays = 90) {
+  if (!prEvents || !prEvents.length) return null; // no PR history logged yet at all
+  const cutoff = daysAgoStr(today, windowDays);
+  const recentCount = prEvents.filter((e) => e.date >= cutoff).length;
+  return clamp(recentCount * 15, 0, 100);
+}
+
+// Shared helper: fraction of SCHEDULED training days in a trailing window
+// that were actually logged. Returns null for programs with no fixed
+// weeklySchedule (Mentzer) since "scheduled training day" isn't defined
+// for those. Today is excluded until it has either been logged or is over
+// — same today-safe rule as the streaks.
+function computeAdherenceRate(workoutLogs, program, today, windowDays = 30) {
+  if (!program?.weeklySchedule) return null;
+  const loggedDates = Object.keys(workoutLogs || {}).map((k) => k.split("|")[0]);
+  const start = clipWindowStart(loggedDates, daysAgoStr(today, windowDays - 1));
+  const span = dateRangeInclusive(start, today);
+  const datesWithWorkout = new Set(deriveWorkoutXpEvents(workoutLogs).map((e) => e.date));
+  let scheduled = 0, hit = 0;
+  span.forEach((date, i) => {
+    const isToday = i === span.length - 1 && date === today;
+    if (isScheduledRestDay(date, program)) return;
+    if (isToday && !datesWithWorkout.has(date)) return; // today not over yet -> excluded, not a miss
+    scheduled += 1;
+    if (datesWithWorkout.has(date)) hit += 1;
+  });
+  return scheduled ? hit / scheduled : null;
+}
+
+// Discipline: half current workout streak (capped at a 14-day streak = 100),
+// half trailing-30-day scheduled-training-day adherence rate.
+function computeDisciplineScore(workoutStreak, adherenceRate) {
+  if (adherenceRate == null) return null;
+  const streakScore = clamp((workoutStreak.current / 14) * 100, 0, 100);
+  return Math.round(streakScore * 0.5 + adherenceRate * 100 * 0.5);
+}
+
+// Nutrition: trailing-30-day hit-rate on protein (target or higher) and
+// calories (within ±10% of target counts as "on target"), averaged.
+// Whichever goals are actually set contributes; a day with nothing logged
+// counts as a miss (same "no log = no credit" rule as the protein streak),
+// except today before anything's been logged, which is excluded rather
+// than scored as a miss.
+function computeNutritionScore(foodLog, goals, today, windowDays = 30) {
+  const proteinTarget = Number(goals?.protein) || 0;
+  const calorieTarget = Number(goals?.calories) || 0;
+  if (proteinTarget <= 0 && calorieTarget <= 0) return null;
+  const loggedDates = Object.keys(foodLog || {});
+  const start = clipWindowStart(loggedDates, daysAgoStr(today, windowDays - 1));
+  const span = dateRangeInclusive(start, today);
+
+  let proteinDays = 0, proteinHits = 0, calorieDays = 0, calorieHits = 0;
+  span.forEach((date, i) => {
+    const isToday = i === span.length - 1 && date === today;
+    const entries = foodLog?.[date];
+    if (isToday && !entries) return; // today hasn't started yet -> excluded
+    const totals = (entries || []).reduce(
+      (s, e) => ({ protein: s.protein + (Number(e.protein) || 0), calories: s.calories + (Number(e.calories) || 0) }),
+      { protein: 0, calories: 0 }
+    );
+    if (proteinTarget > 0) {
+      proteinDays += 1;
+      if (totals.protein >= proteinTarget) proteinHits += 1;
+    }
+    if (calorieTarget > 0) {
+      calorieDays += 1;
+      if (Math.abs(totals.calories - calorieTarget) <= calorieTarget * 0.1) calorieHits += 1;
+    }
+  });
+  const rates = [proteinDays ? proteinHits / proteinDays : null, calorieDays ? calorieHits / calorieDays : null].filter((r) => r != null);
+  return rates.length ? Math.round((rates.reduce((s, r) => s + r, 0) / rates.length) * 100) : null;
+}
+
+// Recovery: of the scheduled rest days in a trailing 30-day window, what
+// fraction were actually rested (no workout logged)? Training through
+// rest days pulls this down. Null for programs with no fixed schedule.
+function computeRecoveryScore(workoutLogs, program, today, windowDays = 30) {
+  if (!program?.weeklySchedule) return null;
+  const loggedDates = Object.keys(workoutLogs || {}).map((k) => k.split("|")[0]);
+  const start = clipWindowStart(loggedDates, daysAgoStr(today, windowDays - 1));
+  const span = dateRangeInclusive(start, today);
+  const datesWithWorkout = new Set(deriveWorkoutXpEvents(workoutLogs).map((e) => e.date));
+  let restDays = 0, actuallyRested = 0;
+  span.forEach((date) => {
+    if (!isScheduledRestDay(date, program)) return;
+    restDays += 1;
+    if (!datesWithWorkout.has(date)) actuallyRested += 1;
+  });
+  return restDays ? Math.round((actuallyRested / restDays) * 100) : null;
+}
+
+// Endurance: aggregates extraReps (actual reps - programmed target reps)
+// across ALL logged AMRAP sets in a trailing 30-day window, across every
+// program/exercise — same underlying signal as volumeTrendHint, just
+// widened from "one exercise's history" to "everything AMRAP-tagged
+// recently" for a single attribute score. avgExtra=0 -> 50 (right at
+// target), each extra rep of average trend is worth +10.
+function collectRecentAmrapResults(workoutLogs, today, windowDays = 30) {
+  const cutoff = daysAgoStr(today, windowDays);
+  const results = [];
+  for (const [dayKey, session] of Object.entries(workoutLogs || {})) {
+    const [date, programKey, dayIndexStr] = dayKey.split("|");
+    if (date < cutoff) continue;
+    const day = PROGRAMS[programKey]?.days?.[Number(dayIndexStr)];
+    if (!day) continue;
+    for (const ex of day.exercises) {
+      if (!ex.amrap) continue;
+      const sets = session[ex.name];
+      if (!sets) continue;
+      const indices = Object.keys(sets).map(Number).sort((a, b) => a - b);
+      const last = sets[indices[indices.length - 1]];
+      if (!last?.weight || !last?.reps) continue;
+      results.push({ date, extraReps: Number(last.reps) - ex.reps });
+    }
+  }
+  return results.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function computeEnduranceScore(workoutLogs, today, windowDays = 30) {
+  const results = collectRecentAmrapResults(workoutLogs, today, windowDays);
+  if (!results.length) return null;
+  const recent = results.slice(-6); // roughly the last 1-2 AMRAP sessions across exercises
+  const avgExtra = recent.reduce((s, r) => s + r.extraReps, 0) / recent.length;
+  return clamp(Math.round(50 + avgExtra * 10), 0, 100);
+}
+
+function computeAttributes({ workoutLogs, foodLog, goals, prXpEvents, activeProgramKey, today }) {
+  const program = PROGRAMS[activeProgramKey];
+  const workoutStreak = computeWorkoutStreak(workoutLogs, program, today);
+  const adherenceRate = computeAdherenceRate(workoutLogs, program, today);
+  return {
+    strength: computeStrengthScore(prXpEvents, today),
+    discipline: computeDisciplineScore(workoutStreak, adherenceRate),
+    nutrition: computeNutritionScore(foodLog, goals, today),
+    recovery: computeRecoveryScore(workoutLogs, program, today),
+    endurance: computeEnduranceScore(workoutLogs, today),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Achievements — Phase 2, Session 4.
+//
+// Static definitions + a pure unlock-check function. Progress is fully
+// re-derivable every render from xpState/streaks/prXpEvents (same
+// derive-don't-duplicate principle as everything above), so it never needs
+// its own storage.
+//
+// What CAN'T be derived after the fact is WHEN an achievement was first
+// earned — same problem PR moments have (current state only says "is this
+// true right now," not "the day it first became true"). So unlock dates
+// live in a small persisted ledger (`achievementUnlocks: {id: dateISO}`),
+// appended the moment computeAchievementProgress first reports something as
+// met — same append-on-event pattern as prXpEvents, wired in App() rather
+// than recomputed from scratch.
+//
+// All streak-based achievements use `longest`, never `current` — once
+// earned, an achievement must not un-earn itself just because today's
+// streak reset. Surfaced as a toast for now (Session 4 scope per roadmap);
+// a full gallery view is later.
+// ---------------------------------------------------------------------------
+const ACHIEVEMENTS = [
+  { id: "first_workout", name: "First Rep", description: "Log your first workout.", metric: (ctx) => ({ current: ctx.workoutCount, target: 1 }) },
+  { id: "first_pr", name: "New Best", description: "Hit your first personal record.", metric: (ctx) => ({ current: ctx.prCount, target: 1 }) },
+  { id: "workout_streak_7", name: "One Week In", description: "Reach a 7-day workout streak.", metric: (ctx) => ({ current: ctx.streaks.workout.longest, target: 7 }) },
+  { id: "workout_streak_30", name: "Iron Habit", description: "Reach a 30-day workout streak.", metric: (ctx) => ({ current: ctx.streaks.workout.longest, target: 30 }) },
+  { id: "protein_streak_7", name: "Dialed In", description: "Hit your protein target 7 days running.", metric: (ctx) => ({ current: ctx.streaks.protein.longest, target: 7 }) },
+  { id: "protein_streak_30", name: "Locked In", description: "Hit your protein target 30 days running.", metric: (ctx) => ({ current: ctx.streaks.protein.longest, target: 30 }) },
+  { id: "pr_collector_5", name: "Record Breaker", description: "Hit 5 personal records.", metric: (ctx) => ({ current: ctx.prCount, target: 5 }) },
+  { id: "pr_collector_10", name: "Serial Record Breaker", description: "Hit 10 personal records.", metric: (ctx) => ({ current: ctx.prCount, target: 10 }) },
+  { id: "level_5", name: "Level 5", description: "Reach level 5.", metric: (ctx) => ({ current: ctx.xpState.level, target: 5 }) },
+  { id: "level_10", name: "Level 10", description: "Reach level 10.", metric: (ctx) => ({ current: ctx.xpState.level, target: 10 }) },
+  { id: "fifty_workouts", name: "Half Century", description: "Log 50 total workouts.", metric: (ctx) => ({ current: ctx.workoutCount, target: 50 }) },
+  { id: "century_club", name: "Century Club", description: "Log 100 total workouts.", metric: (ctx) => ({ current: ctx.workoutCount, target: 100 }) },
+];
+
+// Shared context every ACHIEVEMENTS metric reads from — computed once so
+// every achievement's count stays consistent instead of each one re-deriving
+// its own slightly-different count.
+function buildAchievementContext({ xpState, streaks, prXpEvents }) {
+  const workoutCount = xpState.xpHistory.filter((e) => e.source === "workout_completed").length;
+  const prCount = (prXpEvents || []).length;
+  return { xpState, streaks, workoutCount, prCount };
+}
+
+// Pure and fully derived — safe to call every render. Doesn't know or care
+// about persisted unlock dates, just "is this true right now."
+function computeAchievementProgress({ xpState, streaks, prXpEvents }) {
+  const ctx = buildAchievementContext({ xpState, streaks, prXpEvents });
+  return ACHIEVEMENTS.map((a) => {
+    const { current, target } = a.metric(ctx);
+    return { id: a.id, name: a.name, description: a.description, current, target, met: current >= target };
+  });
+}
+
+// Given the current progress list and the persisted unlock ledger, returns
+// achievements that are met now but not yet in the ledger — what needs to
+// be appended + toasted.
+function findNewlyUnlockedAchievements(progressList, unlockedLedger) {
+  return progressList.filter((a) => a.met && !(unlockedLedger || {})[a.id]);
+}
+
+// ---------------------------------------------------------------------------
+// Quests — Phase 2, Session 5.
+//
+// Daily quests: a fixed checklist evaluated fresh against TODAY's data only
+// — no persistence needed, "done" is just "is today's condition true right
+// now." A quest only appears if its underlying goal is actually set (no
+// "hit your water target" quest if no water target exists) — same
+// principle as computeNutritionScore skipping unset goals.
+//
+// Long-term quests: per the roadmap, these are "just labeled progress bars
+// against verified PR/macro data — cheap once Phase 0 + Session 1 exist."
+// Rather than build a second progress-tracking system, long-term quests
+// ARE the not-yet-met achievements from Session 4, relabeled as an
+// in-progress list — same underlying computeAchievementProgress, zero new
+// state, sorted so whatever's closest to completion shows first.
+// ---------------------------------------------------------------------------
+const DAILY_QUEST_DEFS = [
+  { id: "log_workout", label: "Log today's workout", needsGoal: () => true },
+  { id: "hit_protein", label: "Hit your protein target", needsGoal: (goals) => Number(goals?.protein) > 0 },
+  { id: "hit_water", label: "Hit your water target", needsGoal: (goals) => Number(goals?.water) > 0 },
+  { id: "hit_steps", label: "Hit your step target", needsGoal: (goals) => Number(goals?.steps) > 0 },
+];
+
+function computeDailyQuests({ workoutLogs, foodLog, dailyVitals, goals, today }) {
+  const workoutDoneToday = deriveWorkoutXpEvents(workoutLogs).some((e) => e.date === today);
+  const proteinDoneToday = deriveProteinXpEvents(foodLog, goals).some((e) => e.date === today);
+  const waterDoneToday = deriveWaterXpEvents(dailyVitals, goals).some((e) => e.date === today);
+  const stepsTarget = Number(goals?.steps) || 0;
+  const stepsToday = Number(dailyVitals?.[today]?.steps) || 0;
+  const stepsDoneToday = stepsTarget > 0 && stepsToday >= stepsTarget;
+
+  const doneMap = { log_workout: workoutDoneToday, hit_protein: proteinDoneToday, hit_water: waterDoneToday, hit_steps: stepsDoneToday };
+  return DAILY_QUEST_DEFS.filter((q) => q.needsGoal(goals)).map((q) => ({ id: q.id, label: q.label, done: !!doneMap[q.id] }));
+}
+
+function computeLongTermQuests({ xpState, streaks, prXpEvents }) {
+  return computeAchievementProgress({ xpState, streaks, prXpEvents })
+    .filter((a) => !a.met)
+    .sort((a, b) => (b.current / b.target) - (a.current / a.target)) // closest-to-done first
+    .map((a) => ({ id: a.id, label: a.name, description: a.description, current: a.current, target: a.target }));
+}
+
+// Small pure helper for the Home Screen (Session 6): the persisted
+// achievementUnlocks ledger only has {id: dateISO}; this joins it back
+// against ACHIEVEMENTS for display and returns the most recent N, newest
+// first.
+function computeRecentUnlocks(achievementUnlocks, limit = 5) {
+  const byId = Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, a]));
+  return Object.entries(achievementUnlocks || {})
+    .map(([id, date]) => (byId[id] ? { id, date, name: byId[id].name, description: byId[id].description } : null))
+    .filter(Boolean)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, limit);
+}
+
+// ---------------------------------------------------------------------------
+// Progress analytics — Phase 2, Session 7.
+//
+// Strength graph: no new tracking needed — prXpEvents already carries a
+// {weight, reps, e1rm} snapshot at the moment of each PR (extended this
+// session in TrainTab.logSet), so a per-exercise strength trend is just a
+// filter + sort over the existing ledger.
+//
+// Bodyweight/BF%: confirmed nothing tracked this before. New storage key
+// (`bodyMetrics`), built from scratch this session, per the roadmap.
+//
+// BF% entry — Navy/USMC circumference method (Hodgdon & Beckett, official
+// Navy Guide 4 formula). Manual entry is the default; "calculate from
+// measurements" is the alternative for when you don't already know the
+// number. Whichever mode produced an entry is what gets stored — never
+// both a manual and a calculated value for the same date.
+// ---------------------------------------------------------------------------
+
+// Verified against two independently-published worked examples (not just
+// re-derived from the same formula source):
+//   Male,   waist=34,          neck=15.5,        height=70            -> 16.5%
+//   Female, waist=29, hip=38,  neck=13,          height=65            -> 27.3%
+// (both via fitties.com/blogs/fitties-journal/calculate-body-fat-us-navy-body-fat-formula)
+function computeNavyBF({ sex, neck, waist, height, hip }) {
+  const n = Number(neck), w = Number(waist), h = Number(height), hp = Number(hip);
+  if (sex === "male") {
+    if (!(n > 0 && w > 0 && h > 0) || w - n <= 0) return null;
+    return 86.010 * Math.log10(w - n) - 70.041 * Math.log10(h) + 36.76;
+  }
+  if (sex === "female") {
+    if (!(n > 0 && w > 0 && h > 0 && hp > 0) || w + hp - n <= 0) return null;
+    return 163.205 * Math.log10(w + hp - n) - 97.684 * Math.log10(h) - 78.387;
+  }
+  return null; // unknown sex -> can't select a formula, not a guess
+}
+
+// Pure form-to-entry builder — decides what gets stored for a given date's
+// bodyMetrics entry, enforcing "store whichever mode was used, never both."
+function buildBodyMetricsEntry({ mode, weightLbs, manualBf, sex, neck, waist, height, hip }) {
+  const entry = { weightLbs: weightLbs === "" || weightLbs == null ? null : Number(weightLbs) };
+  if (mode === "calculated") {
+    const bf = computeNavyBF({ sex, neck, waist, height, hip });
+    entry.bfPercent = bf == null ? null : Math.round(bf * 10) / 10;
+    entry.bfMethod = "calculated";
+    entry.measurements = { neck: Number(neck) || null, waist: Number(waist) || null, height: Number(height) || null, hip: sex === "female" ? Number(hip) || null : null };
+  } else {
+    entry.bfPercent = manualBf === "" || manualBf == null ? null : Number(manualBf);
+    entry.bfMethod = "manual";
+  }
+  return entry;
+}
+
+// Strength history for one exercise, oldest first — straight off the
+// existing prXpEvents ledger, no new tracking.
+function computeStrengthHistory(prXpEvents, exerciseName) {
+  return (prXpEvents || [])
+    .filter((e) => e.source === "pr_hit" && e.exerciseName === exerciseName && e.e1rm != null)
+    .map((e) => ({ date: e.date, e1rm: e.e1rm, weight: e.weight, reps: e.reps }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Every exercise that has at least one PR event, for a picker UI.
+function listExercisesWithHistory(prXpEvents) {
+  return Array.from(new Set((prXpEvents || []).filter((e) => e.source === "pr_hit").map((e) => e.exerciseName))).sort();
+}
+
+// Bodyweight/BF% trend, oldest first, straight off bodyMetrics.
+function computeBodyMetricsTrend(bodyMetrics) {
+  return Object.entries(bodyMetrics || {})
+    .map(([date, m]) => ({ date, weightLbs: m?.weightLbs ?? null, bfPercent: m?.bfPercent ?? null }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// ---------------------------------------------------------------------------
 // AMRAP week-to-week progression — mirrors Bromley's actual Bullmastiff/BASE
 // method: on a 4x6+ scheme, add 1% of your working weight (as a 1RM proxy)
 // to NEXT SESSION's weight for every rep beyond the target you hit on the
@@ -614,7 +1559,7 @@ function volumeTrendHint(history) {
 // ---------------------------------------------------------------------------
 // Cost of one meal = sum of its ingredient price estimates.
 // ---------------------------------------------------------------------------
-const mealCost = (meal) => (meal.ingredients || []).reduce((s, i) => s + (Number(i.price) || 0), 0);
+const mealCost = (meal, location = "") => (meal.ingredients || []).reduce((s, i) => s + (Number(i.price) || 0), 0) * regionMultiplier(location);
 
 // ---------------------------------------------------------------------------
 // TDEE — Mifflin-St Jeor
@@ -642,16 +1587,22 @@ function calcTDEE({ sex, weightLb, heightIn, age, activity }) {
 // Good enough for "here's a combo that's in the right ballpark" — not a
 // guarantee of the mathematically optimal fit.
 // ---------------------------------------------------------------------------
-function suggestCombo({ meals, target, budget, maxMeals = 6, jitter = 0 }) {
+function suggestCombo({ meals, target, budget, maxMeals = 6, jitter = 0, location = "" }) {
   if (!meals.length) return { chosen: [], remaining: target, totalCost: 0 };
   let remaining = { calories: target.calories, protein: target.protein, carbs: target.carbs, fat: target.fat };
   let remainingBudget = budget;
   const chosen = [];
+  const usedIds = new Set();
 
   for (let step = 0; step < maxMeals; step++) {
     if (remaining.calories <= 100) break;
-    const candidates = meals.filter((m) => mealCost(m) <= remainingBudget + 0.005);
-    if (!candidates.length) break;
+    const allAffordable = meals.filter((m) => mealCost(m, location) <= remainingBudget + 0.005);
+    if (!allAffordable.length) break;
+    // Prefer meals not already used this round so a small library doesn't
+    // just serve up the same "best fit" meal on repeat; only reuse one if
+    // every affordable option has already been picked.
+    const unused = allAffordable.filter((m) => !usedIds.has(m.id));
+    const candidates = unused.length ? unused : allAffordable;
 
     let best = null;
     let bestScore = Infinity;
@@ -671,13 +1622,14 @@ function suggestCombo({ meals, target, budget, maxMeals = 6, jitter = 0 }) {
     if (!best) break;
 
     chosen.push(best);
+    usedIds.add(best.id);
     remaining = {
       calories: remaining.calories - (best.calories || 0),
       protein: remaining.protein - (best.protein || 0),
       carbs: remaining.carbs - (best.carbs || 0),
       fat: remaining.fat - (best.fat || 0),
     };
-    remainingBudget -= mealCost(best);
+    remainingBudget -= mealCost(best, location);
   }
 
   const totalCost = budget - remainingBudget;
@@ -688,7 +1640,7 @@ function suggestCombo({ meals, target, budget, maxMeals = 6, jitter = 0 }) {
 // App
 // ---------------------------------------------------------------------------
 export default function App() {
-  const [tab, setTab] = useState("today");
+  const [tab, setTab] = useState("home");
   const [ready, setReady] = useState(false);
 
   const [meals, setMeals] = useState([]);
@@ -696,12 +1648,18 @@ export default function App() {
   const [location, setLocation] = useState("");
   const [activeProgramKey, setActiveProgramKey] = useState("cutler");
   const [workoutLogs, setWorkoutLogs] = useState({}); // date -> { dayIndex, sets: [{exercise, weight, reps, rir, notes, suggestedNext}] }
-  const [goals, setGoals] = useState({ calories: "", protein: "", carbs: "", fat: "", budget: "" });
+  const [goals, setGoals] = useState({ calories: "", protein: "", carbs: "", fat: "", budget: "", water: "", steps: "" });
   const [mealTimes, setMealTimes] = useState({}); // mealId -> "HH:MM"
   const [notifiedToday, setNotifiedToday] = useState({}); // `${date}_${mealId}` -> true, in-memory only
   const [programStartDates, setProgramStartDates] = useState({}); // programKey -> "YYYY-MM-DD"
   const [trainingMaxes, setTrainingMaxes] = useState({}); // liftName -> number (used by Bullmastiff)
+  const [personalRecords, setPersonalRecords] = useState({}); // exerciseName -> { weight, reps, rir, date, e1rm }
   const [foodLog, setFoodLog] = useState({}); // date -> [{id, name, serving, qty, calories, protein, carbs, fat}]
+  const [prXpEvents, setPrXpEvents] = useState([]); // [{id, date, source:"pr_hit", amount, note}] — see XP engine comment above computeXpState
+  const [achievementUnlocks, setAchievementUnlocks] = useState({}); // {id: dateISO} — appended the moment computeAchievementProgress first reports `met`, see Achievements comment
+  const [justUnlockedAchievement, setJustUnlockedAchievement] = useState(null); // {id,name,description} | null — toast only, no persistence
+  const [dailyVitals, setDailyVitals] = useState({}); // date -> { waterOz, steps } — new this session (Phase 2, Session 5); no prior tracking existed
+  const [bodyMetrics, setBodyMetrics] = useState({}); // date -> { weightLbs, bfPercent, bfMethod, measurements? } — new this session (Phase 2, Session 7); no prior tracking existed
   const [groceryPlan, setGroceryPlan] = useState({}); // recipeId -> servings (batch size selected in Grocery tab)
   const [mealSlots, setMealSlots] = useState([]); // [{id, label, time, protein, carbs, fat}] — per-meal macro targets, linked to Reminders
   const [storageError, setStorageError] = useState(null);
@@ -723,11 +1681,16 @@ export default function App() {
       setLocation(await load("location", ""));
       setActiveProgramKey(await load("activeProgram", "cutler"));
       setWorkoutLogs(await load("workoutLogs", {}));
-      setGoals(await load("goals", { calories: "", protein: "", carbs: "", fat: "", budget: "" }));
+      setGoals(await load("goals", { calories: "", protein: "", carbs: "", fat: "", budget: "", water: "", steps: "" }));
       setMealTimes(await load("mealTimes", {}));
       setProgramStartDates(await load("programStartDates", {}));
       setTrainingMaxes(await load("trainingMaxes", {}));
+      setPersonalRecords(await load("personalRecords", {}));
       setFoodLog(await load("foodLog", {}));
+      setPrXpEvents(await load("prXpEvents", []));
+      setAchievementUnlocks(await load("achievementUnlocks", {}));
+      setDailyVitals(await load("dailyVitals", {}));
+      setBodyMetrics(await load("bodyMetrics", {}));
       setGroceryPlan(await load("groceryPlan", {}));
       setMealSlots(await load("mealSlots", []));
       setReady(true);
@@ -742,7 +1705,63 @@ export default function App() {
   useEffect(() => { if (ready) persist("mealTimes", mealTimes); }, [mealTimes, ready, persist]);
   useEffect(() => { if (ready) persist("programStartDates", programStartDates); }, [programStartDates, ready, persist]);
   useEffect(() => { if (ready) persist("trainingMaxes", trainingMaxes); }, [trainingMaxes, ready, persist]);
+  useEffect(() => { if (ready) persist("personalRecords", personalRecords); }, [personalRecords, ready, persist]);
   useEffect(() => { if (ready) persist("foodLog", foodLog); }, [foodLog, ready, persist]);
+  useEffect(() => { if (ready) persist("prXpEvents", prXpEvents); }, [prXpEvents, ready, persist]);
+  useEffect(() => { if (ready) persist("achievementUnlocks", achievementUnlocks); }, [achievementUnlocks, ready, persist]);
+  useEffect(() => { if (ready) persist("dailyVitals", dailyVitals); }, [dailyVitals, ready, persist]);
+  useEffect(() => { if (ready) persist("bodyMetrics", bodyMetrics); }, [bodyMetrics, ready, persist]);
+
+  // Single source of truth for XP — recomputed whenever any source log
+  // changes. See computeXpState comment for why this is safe to fully
+  // recompute rather than incrementally patch.
+  const xpState = useMemo(
+    () => computeXpState({ workoutLogs, foodLog, goals, prEvents: prXpEvents }),
+    [workoutLogs, foodLog, goals, prXpEvents]
+  );
+
+  const streaks = useMemo(
+    () => computeStreaks({ workoutLogs, foodLog, goals, dailyVitals, activeProgramKey, today: todayStr() }),
+    [workoutLogs, foodLog, goals, dailyVitals, activeProgramKey]
+  );
+
+  const attributes = useMemo(
+    () => computeAttributes({ workoutLogs, foodLog, goals, prXpEvents, activeProgramKey, today: todayStr() }),
+    [workoutLogs, foodLog, goals, prXpEvents, activeProgramKey]
+  );
+
+  // Fully derived every render; the effect below is only responsible for
+  // noticing when something NEWLY crosses into `met` and recording the date.
+  const achievementProgress = useMemo(
+    () => computeAchievementProgress({ xpState, streaks, prXpEvents }),
+    [xpState, streaks, prXpEvents]
+  );
+  useEffect(() => {
+    if (!ready) return;
+    const newlyUnlocked = findNewlyUnlockedAchievements(achievementProgress, achievementUnlocks);
+    if (!newlyUnlocked.length) return;
+    const today = todayStr();
+    setAchievementUnlocks((prev) => {
+      const next = { ...prev };
+      newlyUnlocked.forEach((a) => { next[a.id] = today; });
+      return next;
+    });
+    setJustUnlockedAchievement(newlyUnlocked[newlyUnlocked.length - 1]);
+    // Re-runs once more after achievementUnlocks updates above, but by then
+    // newlyUnlocked is empty and it's a no-op — not a loop.
+  }, [achievementProgress, achievementUnlocks, ready]);
+
+  const dailyQuests = useMemo(
+    () => computeDailyQuests({ workoutLogs, foodLog, dailyVitals, goals, today: todayStr() }),
+    [workoutLogs, foodLog, dailyVitals, goals]
+  );
+  const longTermQuests = useMemo(
+    () => computeLongTermQuests({ xpState, streaks, prXpEvents }),
+    [xpState, streaks, prXpEvents]
+  );
+  const recentUnlocks = useMemo(() => computeRecentUnlocks(achievementUnlocks, 5), [achievementUnlocks]);
+  const exercisesWithHistory = useMemo(() => listExercisesWithHistory(prXpEvents), [prXpEvents]);
+  const bodyMetricsTrend = useMemo(() => computeBodyMetricsTrend(bodyMetrics), [bodyMetrics]);
   useEffect(() => { if (ready) persist("groceryPlan", groceryPlan); }, [groceryPlan, ready, persist]);
   useEffect(() => { if (ready) persist("mealSlots", mealSlots); }, [mealSlots, ready, persist]);
 
@@ -818,6 +1837,20 @@ export default function App() {
           </div>
         </div>
       )}
+      {justUnlockedAchievement && (
+        <div className="max-w-2xl mx-auto px-4 pt-3">
+          <div className="bg-amber-950/50 border border-amber-800/50 text-amber-200 rounded-xl px-3.5 py-2.5 text-sm font-medium flex items-start gap-2">
+            <Trophy size={15} className="shrink-0 mt-0.5 text-amber-400" />
+            <span className="flex-1">
+              Achievement unlocked — {justUnlockedAchievement.name}
+              <span className="block text-amber-400/80 font-normal text-xs mt-0.5">{justUnlockedAchievement.description}</span>
+            </span>
+            <button onClick={() => setJustUnlockedAchievement(null)} className="shrink-0 text-amber-500 hover:text-amber-300">
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+      )}
       {banner && (
         <div className="max-w-2xl mx-auto px-4 pt-3">
           <div className="bg-orange-600 text-zinc-950 rounded-xl px-3.5 py-2.5 text-sm font-medium flex items-center gap-2">
@@ -826,6 +1859,17 @@ export default function App() {
         </div>
       )}
       <main className="max-w-2xl mx-auto px-4 pt-4">
+        {tab === "home" && (
+          <HomeTab
+            xpState={xpState}
+            streaks={streaks}
+            attributes={attributes}
+            dailyQuests={dailyQuests}
+            longTermQuests={longTermQuests}
+            recentUnlocks={recentUnlocks}
+            setTab={setTab}
+          />
+        )}
         {tab === "today" && (
           <TodayTab
             meals={meals}
@@ -833,6 +1877,11 @@ export default function App() {
             setLog={setLog}
             activeProgramKey={activeProgramKey}
             setActiveProgramKey={setActiveProgramKey}
+            dailyVitals={dailyVitals}
+            setDailyVitals={setDailyVitals}
+            goals={goals}
+            dailyQuests={dailyQuests}
+            longTermQuests={longTermQuests}
           />
         )}
         {tab === "prep" && (
@@ -850,10 +1899,10 @@ export default function App() {
           />
         )}
         {tab === "cookbook" && (
-          <CookbookTab goals={goals} mealSlots={mealSlots} setMeals={setMeals} setLog={setLog} meals={meals} log={log} activeProgramKey={activeProgramKey} programStartDates={programStartDates} />
+          <CookbookTab goals={goals} mealSlots={mealSlots} setMeals={setMeals} setLog={setLog} meals={meals} log={log} activeProgramKey={activeProgramKey} programStartDates={programStartDates} location={location} />
         )}
         {tab === "grocery" && (
-          <GroceryTab goals={goals} groceryPlan={groceryPlan} setGroceryPlan={setGroceryPlan} meals={meals} />
+          <GroceryTab goals={goals} groceryPlan={groceryPlan} setGroceryPlan={setGroceryPlan} meals={meals} location={location} />
         )}
         {tab === "logbook" && (
           <LogbookTab goals={goals} foodLog={foodLog} setFoodLog={setFoodLog} />
@@ -871,6 +1920,18 @@ export default function App() {
             setProgramStartDates={setProgramStartDates}
             trainingMaxes={trainingMaxes}
             setTrainingMaxes={setTrainingMaxes}
+            personalRecords={personalRecords}
+            setPersonalRecords={setPersonalRecords}
+            setPrXpEvents={setPrXpEvents}
+          />
+        )}
+        {tab === "progress" && (
+          <ProgressTab
+            bodyMetrics={bodyMetrics}
+            setBodyMetrics={setBodyMetrics}
+            bodyMetricsTrend={bodyMetricsTrend}
+            prXpEvents={prXpEvents}
+            exercisesWithHistory={exercisesWithHistory}
           />
         )}
       </main>
@@ -895,12 +1956,14 @@ function Header() {
 
 function NavBar({ tab, setTab }) {
   const items = [
+    { key: "home", label: "Home", icon: Flame },
     { key: "today", label: "Today", icon: ClipboardList },
     { key: "prep", label: "Prep", icon: UtensilsCrossed },
     { key: "cookbook", label: "Cookbook", icon: BookOpen },
     { key: "grocery", label: "Grocery", icon: ShoppingCart },
     { key: "logbook", label: "Log", icon: Search },
     { key: "train", label: "Train", icon: Dumbbell },
+    { key: "progress", label: "Progress", icon: TrendingUp },
     { key: "reminders", label: "Remind", icon: Bell },
   ];
   return (
@@ -928,10 +1991,270 @@ function NavBar({ tab, setTab }) {
 // ---------------------------------------------------------------------------
 // TODAY TAB — daily meal checklist with cheat-meal override
 // ---------------------------------------------------------------------------
-function TodayTab({ meals, log, setLog, activeProgramKey, setActiveProgramKey }) {
+// ---------------------------------------------------------------------------
+// HOME TAB — Phase 2, Session 6. Pulls from everything built in Sessions 1-5;
+// deliberately built last so it wires against real, already-verified data
+// instead of getting rebuilt once real data existed. Every number here is
+// a prop computed upstream in App() via useMemo — this component only
+// renders, it doesn't derive anything itself.
+// ---------------------------------------------------------------------------
+function XpBar({ xpState }) {
+  const floor = xpForLevel(xpState.level);
+  const ceiling = xpForLevel(xpState.level + 1);
+  const span = ceiling - floor || 1;
+  const pct = clamp(((xpState.totalXp - floor) / span) * 100, 0, 100);
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+      <div className="flex items-end justify-between mb-2">
+        <div>
+          <div className="text-xs text-zinc-500 uppercase tracking-wide">Level</div>
+          <div className="text-3xl font-bold text-orange-500">{xpState.level}</div>
+        </div>
+        <div className="text-right text-xs text-zinc-500">
+          {xpState.totalXp} XP total<br />
+          {ceiling - xpState.totalXp} to level {xpState.level + 1}
+        </div>
+      </div>
+      <div className="w-full bg-zinc-950 rounded-full h-2 overflow-hidden">
+        <div className="h-full bg-orange-500" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function StreakBadge({ label, icon: Icon, streak, color }) {
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex-1 text-center">
+      <Icon size={16} className={`mx-auto mb-1 ${color}`} />
+      <div className="text-lg font-bold text-zinc-100">{streak.current}</div>
+      <div className="text-[10px] text-zinc-500 uppercase tracking-wide">{label}</div>
+      {streak.longest > streak.current && <div className="text-[10px] text-zinc-600 mt-0.5">best {streak.longest}</div>}
+    </div>
+  );
+}
+
+function AttributeBar({ label, value }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between text-xs mb-1">
+        <span className="text-zinc-400">{label}</span>
+        <span className="text-zinc-500">{value == null ? "—" : value}</span>
+      </div>
+      <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden">
+        <div className="h-full bg-orange-600" style={{ width: `${value == null ? 0 : clamp(value, 0, 100)}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function HomeTab({ xpState, streaks, attributes, dailyQuests, longTermQuests, recentUnlocks, setTab }) {
+  const dailyDone = dailyQuests.filter((q) => q.done).length;
+  return (
+    <div className="space-y-4">
+      <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide">The Forge</h2>
+
+      <XpBar xpState={xpState} />
+
+      <div className="flex gap-2">
+        <StreakBadge label="Workout" icon={Dumbbell} streak={streaks.workout} color="text-orange-400" />
+        <StreakBadge label="Protein" icon={Flame} streak={streaks.protein} color="text-emerald-400" />
+        <StreakBadge label="Water" icon={Flame} streak={streaks.water} color="text-sky-400" />
+      </div>
+
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Attributes</label>
+        <AttributeBar label="Strength" value={attributes.strength} />
+        <AttributeBar label="Discipline" value={attributes.discipline} />
+        <AttributeBar label="Nutrition" value={attributes.nutrition} />
+        <AttributeBar label="Recovery" value={attributes.recovery} />
+        <AttributeBar label="Endurance" value={attributes.endurance} />
+      </div>
+
+      {dailyQuests.length > 0 && (
+        <button onClick={() => setTab("today")} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-left hover:border-orange-600/40">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Today's quests</label>
+            <span className="text-xs text-zinc-500">{dailyDone}/{dailyQuests.length}</span>
+          </div>
+          <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden mt-2">
+            <div className="h-full bg-emerald-600" style={{ width: `${dailyQuests.length ? (dailyDone / dailyQuests.length) * 100 : 0}%` }} />
+          </div>
+        </button>
+      )}
+
+      {longTermQuests.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-3">
+          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Next up</label>
+          {longTermQuests.slice(0, 3).map((q) => (
+            <div key={q.id}>
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className="text-zinc-300">{q.label}</span>
+                <span className="text-xs text-zinc-500">{q.current} / {q.target}</span>
+              </div>
+              <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden">
+                <div className="h-full bg-orange-600" style={{ width: `${clamp((q.current / q.target) * 100, 0, 100)}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {recentUnlocks.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-2">
+          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide flex items-center gap-1.5">
+            <Trophy size={13} className="text-amber-400" /> Recent achievements
+          </label>
+          {recentUnlocks.map((a) => (
+            <div key={a.id} className="flex items-center justify-between text-sm">
+              <span className="text-zinc-300">{a.name}</span>
+              <span className="text-xs text-zinc-600">{a.date}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function Sparkline({ points, color = "#f97316", height = 80 }) {
+  const clean = (points || []).filter((p) => p.value != null);
+  if (clean.length < 2) {
+    return <div className="h-20 flex items-center justify-center text-xs text-zinc-600">Need at least 2 entries to chart a trend</div>;
+  }
+  const values = clean.map((p) => p.value);
+  const min = Math.min(...values), max = Math.max(...values);
+  const span = max - min || 1;
+  const w = 300;
+  const coords = clean.map((p, i) => {
+    const x = (i / (clean.length - 1)) * w;
+    const y = height - ((p.value - min) / span) * (height - 8) - 4;
+    return `${x},${y}`;
+  });
+  return (
+    <div>
+      <svg viewBox={`0 0 ${w} ${height}`} className="w-full" style={{ height }}>
+        <polyline points={coords.join(" ")} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+      <div className="flex justify-between text-[10px] text-zinc-600 mt-1">
+        <span>{clean[0].date}</span>
+        <span>{clean[clean.length - 1].date}</span>
+      </div>
+    </div>
+  );
+}
+
+function ProgressTab({ bodyMetrics, setBodyMetrics, bodyMetricsTrend, prXpEvents, exercisesWithHistory }) {
+  const date = todayStr();
+  const [mode, setMode] = useState("manual");
+  const [sex, setSex] = useState("male");
+  const [form, setForm] = useState({ weightLbs: "", manualBf: "", neck: "", waist: "", height: "", hip: "" });
+  const [selectedExercise, setSelectedExercise] = useState(exercisesWithHistory[0] || "");
+
+  const setField = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+  const previewBf = mode === "calculated" ? computeNavyBF({ sex, neck: form.neck, waist: form.waist, height: form.height, hip: form.hip }) : null;
+
+  const saveEntry = () => {
+    const entry = buildBodyMetricsEntry({ mode, weightLbs: form.weightLbs, manualBf: form.manualBf, sex, neck: form.neck, waist: form.waist, height: form.height, hip: form.hip });
+    setBodyMetrics((prev) => ({ ...prev, [date]: entry }));
+  };
+
+  const strengthHistory = useMemo(() => computeStrengthHistory(prXpEvents, selectedExercise), [prXpEvents, selectedExercise]);
+  const todayEntry = bodyMetrics[date];
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide">Progress</h2>
+
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Bodyweight trend</label>
+        <Sparkline points={bodyMetricsTrend.map((m) => ({ date: m.date, value: m.weightLbs }))} color="#f97316" />
+      </div>
+
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Body fat % trend</label>
+        <Sparkline points={bodyMetricsTrend.map((m) => ({ date: m.date, value: m.bfPercent }))} color="#38bdf8" />
+      </div>
+
+      {exercisesWithHistory.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Strength trend (e1RM)</label>
+            <select value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs">
+              {exercisesWithHistory.map((ex) => <option key={ex} value={ex}>{ex}</option>)}
+            </select>
+          </div>
+          <Sparkline points={strengthHistory.map((h) => ({ date: h.date, value: h.e1rm }))} color="#22c55e" />
+        </div>
+      )}
+
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Log today's numbers</label>
+        {todayEntry && <p className="text-[11px] text-zinc-500">Already logged today via {todayEntry.bfMethod || "—"} — saving again overwrites it.</p>}
+        <div>
+          <label className="text-[10px] text-zinc-600">Bodyweight (lbs)</label>
+          <input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={form.weightLbs} onChange={(e) => setField("weightLbs", e.target.value)} />
+        </div>
+
+        <div className="flex gap-2 text-xs">
+          <button onClick={() => setMode("manual")} className={`flex-1 rounded-lg py-1.5 border ${mode === "manual" ? "border-orange-600 text-orange-400" : "border-zinc-800 text-zinc-500"}`}>Enter BF% directly</button>
+          <button onClick={() => setMode("calculated")} className={`flex-1 rounded-lg py-1.5 border ${mode === "calculated" ? "border-orange-600 text-orange-400" : "border-zinc-800 text-zinc-500"}`}>Calculate from measurements</button>
+        </div>
+
+        {mode === "manual" ? (
+          <div>
+            <label className="text-[10px] text-zinc-600">Body fat % (from calipers, DEXA, a coach, etc.)</label>
+            <input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={form.manualBf} onChange={(e) => setField("manualBf", e.target.value)} />
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex gap-2 text-xs">
+              <button onClick={() => setSex("male")} className={`flex-1 rounded-lg py-1 border ${sex === "male" ? "border-orange-600 text-orange-400" : "border-zinc-800 text-zinc-500"}`}>Male</button>
+              <button onClick={() => setSex("female")} className={`flex-1 rounded-lg py-1 border ${sex === "female" ? "border-orange-600 text-orange-400" : "border-zinc-800 text-zinc-500"}`}>Female</button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><label className="text-[10px] text-zinc-600">Neck (in)</label><input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={form.neck} onChange={(e) => setField("neck", e.target.value)} /></div>
+              <div><label className="text-[10px] text-zinc-600">Waist (in)</label><input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={form.waist} onChange={(e) => setField("waist", e.target.value)} /></div>
+              <div><label className="text-[10px] text-zinc-600">Height (in)</label><input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={form.height} onChange={(e) => setField("height", e.target.value)} /></div>
+              {sex === "female" && (
+                <div><label className="text-[10px] text-zinc-600">Hip (in)</label><input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={form.hip} onChange={(e) => setField("hip", e.target.value)} /></div>
+              )}
+            </div>
+            <p className="text-[11px] text-zinc-500">
+              {previewBf != null ? `≈ ${previewBf.toFixed(1)}% — Navy/USMC circumference method.` : "Enter all measurements to preview."}
+              {" "}Tape-measurement estimate — trend it over time rather than treating any single reading as exact; calipers or a DEXA scan will be more precise at any one point.
+            </p>
+          </div>
+        )}
+
+        <button onClick={saveEntry} className="w-full bg-orange-600 text-zinc-950 font-semibold rounded-lg py-2.5 text-sm">
+          Save today's entry
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TodayTab({ meals, log, setLog, activeProgramKey, setActiveProgramKey, dailyVitals, setDailyVitals, goals, dailyQuests, longTermQuests }) {
   const date = todayStr();
   const dayLog = log[date] || { plan: [], entries: {} };
   const program = PROGRAMS[activeProgramKey];
+  const todayVitals = dailyVitals[date] || { waterOz: 0, steps: 0 };
+  const waterTarget = Number(goals?.water) || 0;
+  const stepsTarget = Number(goals?.steps) || 0;
+
+  const addWater = (oz) => {
+    setDailyVitals((prev) => {
+      const d = prev[date] || { waterOz: 0, steps: 0 };
+      return { ...prev, [date]: { ...d, waterOz: Math.max(0, (Number(d.waterOz) || 0) + oz) } };
+    });
+  };
+  const setSteps = (steps) => {
+    setDailyVitals((prev) => {
+      const d = prev[date] || { waterOz: 0, steps: 0 };
+      return { ...prev, [date]: { ...d, steps: Math.max(0, Number(steps) || 0) } };
+    });
+  };
 
   const addToPlan = (mealId) => {
     setLog((prev) => {
@@ -1025,6 +2348,82 @@ function TodayTab({ meals, log, setLog, activeProgramKey, setActiveProgramKey })
         <p className="text-xs text-zinc-500 mt-1.5">{program.style}</p>
         <p className="text-[11px] text-zinc-600 mt-2">Full set logging is in the Train tab — this stays in sync with whatever you pick here.</p>
       </div>
+
+      {(waterTarget > 0 || stepsTarget > 0) && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-3">
+          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide flex items-center gap-1.5">
+            <Flame size={13} /> Vitals
+          </label>
+          {waterTarget > 0 && (
+            <div>
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className="text-zinc-300">Water</span>
+                <span className={`text-xs ${todayVitals.waterOz >= waterTarget ? "text-emerald-400" : "text-zinc-500"}`}>
+                  {Math.round(todayVitals.waterOz)} / {waterTarget} oz
+                </span>
+              </div>
+              <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden mb-2">
+                <div className="h-full bg-sky-500" style={{ width: `${clamp((todayVitals.waterOz / waterTarget) * 100, 0, 100)}%` }} />
+              </div>
+              <div className="flex gap-2">
+                {[8, 16, 24].map((oz) => (
+                  <button key={oz} onClick={() => addWater(oz)} className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg py-1.5 text-xs text-zinc-300 hover:border-sky-600/60">
+                    +{oz}oz
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {stepsTarget > 0 && (
+            <div>
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className="text-zinc-300">Steps</span>
+                <span className={`text-xs ${todayVitals.steps >= stepsTarget ? "text-emerald-400" : "text-zinc-500"}`}>
+                  {todayVitals.steps} / {stepsTarget}
+                </span>
+              </div>
+              <input
+                type="number"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-sm"
+                placeholder="Today's step count"
+                value={todayVitals.steps || ""}
+                onChange={(e) => setSteps(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {dailyQuests?.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-2">
+          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Today's quests</label>
+          {dailyQuests.map((q) => (
+            <div key={q.id} className="flex items-center gap-2 text-sm">
+              <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 ${q.done ? "bg-emerald-600" : "bg-zinc-800 border border-zinc-700"}`}>
+                {q.done && <Check size={11} className="text-zinc-950" />}
+              </div>
+              <span className={q.done ? "text-zinc-500 line-through" : "text-zinc-300"}>{q.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {longTermQuests?.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-3">
+          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Long-term quests</label>
+          {longTermQuests.slice(0, 3).map((q) => (
+            <div key={q.id}>
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className="text-zinc-300">{q.label}</span>
+                <span className="text-xs text-zinc-500">{q.current} / {q.target}</span>
+              </div>
+              <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden">
+                <div className="h-full bg-orange-600" style={{ width: `${clamp((q.current / q.target) * 100, 0, 100)}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {plannedMeals.length === 0 && (
         <EmptyState
@@ -1175,7 +2574,7 @@ function PrepTab({ meals, setMeals, location, setLocation, goals, setGoals, log,
         Grocery costs below are estimates from typical US grocery pricing, not a live lookup of your local stores — tap any price to override it with what you actually pay.
       </p>
 
-      <GoalsPanel meals={meals} goals={goals} setGoals={setGoals} onAddToToday={addMealToToday} log={log} mealSlots={mealSlots} setMealSlots={setMealSlots} />
+      <GoalsPanel meals={meals} goals={goals} setGoals={setGoals} onAddToToday={addMealToToday} log={log} mealSlots={mealSlots} setMealSlots={setMealSlots} location={location} />
 
       <button
         onClick={() => setShowForm((s) => !s)}
@@ -1201,7 +2600,7 @@ function PrepTab({ meals, setMeals, location, setLocation, goals, setGoals, log,
 // ---------------------------------------------------------------------------
 // GOALS + MEAL-COMBO SUGGESTIONS
 // ---------------------------------------------------------------------------
-function GoalsPanel({ meals, goals, setGoals, onAddToToday, log, mealSlots, setMealSlots }) {
+function GoalsPanel({ meals, goals, setGoals, onAddToToday, log, mealSlots, setMealSlots, location }) {
   const [showTdee, setShowTdee] = useState(false);
   const [bio, setBio] = useState({ sex: "male", weightLb: "", heightIn: "", age: "", activity: "moderate", adjust: "0" });
   const [result, setResult] = useState(null);
@@ -1237,7 +2636,7 @@ function GoalsPanel({ meals, goals, setGoals, onAddToToday, log, mealSlots, setM
   const hasTargets = target.calories > 0;
 
   const generate = (jitter = 0) => {
-    const r = suggestCombo({ meals, target, budget: budget ? budget / 7 : Infinity, jitter });
+    const r = suggestCombo({ meals, target, budget: budget ? budget / 7 : Infinity, jitter, location });
     setResult(r);
     setAddedIds([]);
   };
@@ -1250,11 +2649,11 @@ function GoalsPanel({ meals, goals, setGoals, onAddToToday, log, mealSlots, setM
         protein: acc.protein + (m.protein || 0),
         carbs: acc.carbs + (m.carbs || 0),
         fat: acc.fat + (m.fat || 0),
-        cost: acc.cost + mealCost(m),
+        cost: acc.cost + mealCost(m, location),
       }),
       { calories: 0, protein: 0, carbs: 0, fat: 0, cost: 0 }
     );
-  }, [result]);
+  }, [result, location]);
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 space-y-3">
@@ -1338,6 +2737,16 @@ function GoalsPanel({ meals, goals, setGoals, onAddToToday, log, mealSlots, setM
         <label className="text-[10px] text-zinc-600">Weekly grocery budget (optional — leave blank for no cap)</label>
         <input type="number" placeholder="e.g. 150" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={goals.budget} onChange={(e) => setGoal("budget", e.target.value)} />
       </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-[10px] text-zinc-600">Water target (oz/day, optional)</label>
+          <input type="number" placeholder="e.g. 128" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={goals.water || ""} onChange={(e) => setGoal("water", e.target.value)} />
+        </div>
+        <div>
+          <label className="text-[10px] text-zinc-600">Step target (per day, optional)</label>
+          <input type="number" placeholder="e.g. 8000" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={goals.steps || ""} onChange={(e) => setGoal("steps", e.target.value)} />
+        </div>
+      </div>
 
       <button
         onClick={() => generate(0)}
@@ -1359,7 +2768,7 @@ function GoalsPanel({ meals, goals, setGoals, onAddToToday, log, mealSlots, setM
                   <div key={i} className="flex items-center justify-between text-sm">
                     <span className="text-zinc-200">{m.name}</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-zinc-500">{m.calories}kcal · ${mealCost(m).toFixed(2)}</span>
+                      <span className="text-xs text-zinc-500">{m.calories}kcal · ${mealCost(m, location).toFixed(2)}</span>
                       <button
                         onClick={() => { onAddToToday(m.id); setAddedIds((prev) => [...prev, `${i}`]); }}
                         className={`text-xs rounded-full px-2 py-1 font-medium ${addedIds.includes(`${i}`) ? "bg-teal-700 text-zinc-100" : "bg-zinc-800 text-orange-500"}`}
@@ -1563,6 +2972,31 @@ const COOKBOOK = {
         "This is close to Levrone's actual documented breakfast during his competitive years — very high protein, moderate carb, low fat.",
         "For batch prep: scramble all the eggs for the week at once and portion, but cook oats fresh each morning since they reheat poorly.",
       ] },
+    { id: "b8", name: "Shakshuka-Style Eggs", inspiredBy: "North African/Middle Eastern shakshuka", perServing: { calories: 380, protein: 24, carbs: 18, fat: 24 },
+      ingredients: [{ name: "eggs", qty: 0.25 }, { name: "tomato", qty: 0.2 }, { name: "bell pepper", qty: 0.5 }, { name: "feta", qty: 0.1875 }],
+      instructions: [
+        "Sauté diced bell pepper in olive oil over medium heat for 4-5 min until softened.",
+        "Add crushed tomatoes, simmer 8-10 min until slightly thickened; season with cumin, paprika, salt.",
+        "Crack 3 eggs per serving directly into the sauce, cover, and cook 6-8 min until whites set but yolks stay soft.",
+        "Crumble feta over the top just before serving.",
+        "For batch prep: make the tomato-pepper sauce ahead in a large batch and refrigerate — poach fresh eggs into it each morning since eggs don't reheat well.",
+      ] },
+    { id: "b9", name: "Breakfast Burrito Bowl", inspiredBy: "Tex-Mex breakfast burrito, deconstructed", perServing: { calories: 520, protein: 34, carbs: 45, fat: 22 },
+      ingredients: [{ name: "eggs", qty: 0.25 }, { name: "black beans", qty: 0.333 }, { name: "salsa", qty: 0.125 }, { name: "cheddar cheese", qty: 0.125 }],
+      instructions: [
+        "Scramble 3 eggs per serving in a nonstick pan over medium heat.",
+        "Warm black beans in a small pot or microwave.",
+        "Layer eggs and beans in a bowl, top with salsa and shredded cheddar.",
+        "For batch prep: scramble all the eggs at once, warm a big batch of beans, portion into containers with cheese/salsa added fresh so it doesn't get soggy.",
+      ] },
+    { id: "b10", name: "Mediterranean Egg & Feta Wrap", inspiredBy: "Greek-style breakfast wrap", perServing: { calories: 440, protein: 28, carbs: 32, fat: 22 },
+      ingredients: [{ name: "eggs", qty: 0.25 }, { name: "feta", qty: 0.125 }, { name: "spinach", qty: 0.15 }, { name: "pita", qty: 0.5 }],
+      instructions: [
+        "Scramble 3 eggs per serving with a handful of spinach until just wilted.",
+        "Crumble feta into the eggs off heat so it stays creamy.",
+        "Warm a pita and fold the egg mixture inside.",
+        "For batch prep: scramble all the eggs/spinach together, store separately from the pita, and assemble fresh each morning.",
+      ] },
   ],
   lunch: [
     { id: "l1", name: "Chicken Rice Bowl", inspiredBy: "Ronnie Coleman & Kai Greene's chicken-and-rice staple", perServing: { calories: 520, protein: 45, carbs: 50, fat: 12 },
@@ -1620,6 +3054,54 @@ const COOKBOOK = {
         "Serve over a bed of spinach or mixed greens, dressed lightly with olive oil, salt, pepper, and a squeeze of lemon.",
         "This mirrors Wheeler's low-carb, high-protein contest-prep meals almost exactly — good option when carbs need to come down for a cut.",
         "For batch prep: grill all the chicken at once and slice, keep the greens separate and add fresh each day so they don't wilt.",
+      ] },
+    { id: "l8", name: "Mediterranean Chicken Bowl", inspiredBy: "Greek grain bowl", perServing: { calories: 520, protein: 42, carbs: 42, fat: 18 },
+      ingredients: [{ name: "chicken breast", qty: 0.375 }, { name: "quinoa", qty: 0.143 }, { name: "cucumber", qty: 0.5 }, { name: "feta", qty: 0.125 }, { name: "olive oil", qty: 0.0214 }],
+      instructions: [
+        "Season chicken breast (6oz per serving) with oregano, lemon, salt, pepper; grill or pan-sear ~7 min per side.",
+        "Cook quinoa per package instructions.",
+        "Dice cucumber and toss with the quinoa, a drizzle of olive oil, and crumbled feta.",
+        "Slice the chicken over the top.",
+        "For batch prep: cook all the chicken and quinoa in large batches, portion into containers, and add fresh cucumber each day.",
+      ] },
+    { id: "l9", name: "Chicken Tikka Bowl", inspiredBy: "Indian chicken tikka masala, bowl-style", perServing: { calories: 560, protein: 44, carbs: 48, fat: 20 },
+      ingredients: [{ name: "chicken breast", qty: 0.375 }, { name: "rice", qty: 0.143 }, { name: "coconut milk", qty: 0.286 }, { name: "curry paste", qty: 0.125 }, { name: "spinach", qty: 0.15 }],
+      instructions: [
+        "Sear diced chicken breast (6oz per serving) in a hot pan 5-6 min until browned.",
+        "Add curry paste, cook 1 min until fragrant, stir in coconut milk, simmer 8-10 min until sauce thickens.",
+        "Stir in spinach in the last minute to wilt. Serve over rice.",
+        "For batch prep: cook the whole sauce and chicken in one large pot, cook rice separately in bulk, then portion.",
+      ] },
+    { id: "l10", name: "Turkey Taco Bowl", inspiredBy: "Tex-Mex taco bowl", perServing: { calories: 540, protein: 38, carbs: 48, fat: 18 },
+      ingredients: [{ name: "ground turkey", qty: 0.375 }, { name: "black beans", qty: 0.333 }, { name: "rice", qty: 0.107 }, { name: "salsa", qty: 0.125 }, { name: "avocado", qty: 0.25 }],
+      instructions: [
+        "Brown ground turkey (6oz per serving) in a skillet with taco seasoning, ~7-8 min.",
+        "Warm black beans and cook rice per package instructions.",
+        "Layer rice, beans, turkey, and salsa in a bowl. Add fresh avocado just before eating.",
+        "For batch prep: brown all the turkey at once, cook rice in bulk, warm all the beans, portion into containers, slice avocado fresh each day.",
+      ] },
+    { id: "l11", name: "Tofu Stir Fry Bowl", inspiredBy: "Asian-style vegetarian stir fry", perServing: { calories: 460, protein: 26, carbs: 50, fat: 16 },
+      ingredients: [{ name: "tofu", qty: 0.5 }, { name: "mixed vegetables", qty: 0.571 }, { name: "rice", qty: 0.143 }, { name: "soy sauce", qty: 0.0625 }, { name: "sesame oil", qty: 0.0125 }],
+      instructions: [
+        "Press and cube firm tofu (half a block per serving); pan-fry until golden on most sides, ~8 min.",
+        "Add mixed vegetables to the same pan, stir-fry 4-5 min until tender-crisp.",
+        "Toss with soy sauce and a drizzle of sesame oil off heat. Serve over rice.",
+        "For batch prep: fry all the tofu and vegetables together in large batches, cook rice in bulk, then portion.",
+      ] },
+    { id: "l12", name: "Greek Chicken Pita", inspiredBy: "Greek souvlaki wrap", perServing: { calories: 500, protein: 40, carbs: 40, fat: 18 },
+      ingredients: [{ name: "chicken breast", qty: 0.375 }, { name: "pita", qty: 0.5 }, { name: "tzatziki", qty: 0.25 }, { name: "cucumber", qty: 0.5 }, { name: "feta", qty: 0.0625 }],
+      instructions: [
+        "Season and grill chicken breast (6oz per serving) with oregano and lemon, ~7 min per side; slice.",
+        "Warm the pita, spread tzatziki inside, add sliced chicken, cucumber, and a little crumbled feta.",
+        "For batch prep: grill all the chicken and slice ahead, keep pita/tzatziki/cucumber separate and assemble fresh each day.",
+      ] },
+    { id: "l13", name: "Shrimp Fried Rice", inspiredBy: "Asian-style fried rice", perServing: { calories: 460, protein: 32, carbs: 50, fat: 12 },
+      ingredients: [{ name: "shrimp", qty: 0.375 }, { name: "rice", qty: 0.143 }, { name: "mixed vegetables", qty: 0.429 }, { name: "eggs", qty: 0.083 }, { name: "soy sauce", qty: 0.0625 }],
+      instructions: [
+        "Cook rice ahead of time and let it cool — 1 cup dry per serving (day-old rice fries better).",
+        "Scramble a little egg in a hot wok/pan, push to the side; add shrimp (6oz per serving), cook 2-3 min per side, then add mixed vegetables 3-4 min.",
+        "Add the rice and soy sauce, tossing over high heat 3-4 min.",
+        "For batch prep: cook rice a day ahead, then fry everything together in big batches, portioning into containers.",
       ] },
   ],
   dinner: [
@@ -1696,6 +3178,20 @@ const COOKBOOK = {
   ],
 };
 
+// Recompute every recipe's perServing macros from its own ingredient list at
+// load time, instead of trusting the hand-typed literals above. Mirrors the
+// "derive, don't duplicate" pattern already used for pricing (mealCost/
+// estimatePrice compute at read time rather than storing a static number
+// that can drift). An audit found 32/34 recipes' stated perServing values
+// disagreed with mealMacros(ingredients) by more than 12% — some by 2x or
+// more — meaning the numbers you've been tracking against for these recipes
+// were frequently wrong. This line is the actual fix: perServing is now
+// always in sync with the ingredient list, so editing a recipe's ingredients
+// later can never leave a stale macro number behind.
+for (const category of Object.keys(COOKBOOK)) {
+  COOKBOOK[category] = COOKBOOK[category].map((r) => ({ ...r, perServing: mealMacros(r.ingredients) }));
+}
+
 function combosOfSnacks(snacks) {
   // returns every subset of size 0, 1, or 2 — realistic snack counts for a day
   const out = [[]];
@@ -1736,7 +3232,7 @@ function scaleRecipe(base, factor) {
 // pairs — servingsNeeded being how many days that recipe is used across the
 // week. Ingredient quantities are per-serving, so this scales correctly
 // whether a recipe is used 7 days or just 2-3.
-function weeklyGroceryList(recipeCounts) {
+function weeklyGroceryList(recipeCounts, location = "") {
   const map = new Map();
   for (const { recipe, count } of recipeCounts) {
     for (const ing of recipe.ingredients) {
@@ -1744,13 +3240,33 @@ function weeklyGroceryList(recipeCounts) {
       map.set(key, (map.get(key) || 0) + ing.qty * count);
     }
   }
-  return Array.from(map.entries()).map(([name, qty]) => {
-    const est = estimatePrice(name);
-    return { name, qty, unit: est.unit, unitPrice: est.price, cost: qty * est.price, guessed: !!est.guessed };
+  return Array.from(map.entries()).map(([name, qtyNeeded]) => {
+    const purchase = estimatePurchase(name, qtyNeeded, location);
+    return {
+      name,
+      qty: qtyNeeded,
+      unit: purchase.unit,
+      unitPrice: purchase.price,
+      cost: purchase.cost,
+      guessed: !!purchase.guessed,
+      packagesToBuy: purchase.packagesToBuy,
+      packageLabel: purchase.packageLabel,
+      totalQtyBought: purchase.totalQtyBought,
+    };
   });
 }
 
-function scoreCombo(recipes, target) {
+// Selection-time cost estimate used inside scoreCombo/scoreRecipeForSlot —
+// deliberately NOT package-rounded (stays a smooth qty × unit-price value)
+// since it's comparing thousands of candidate recipes against each other
+// during generation, not representing an actual shopping trip. The real,
+// rounded-to-what-you'd-buy total shows up in weeklyGroceryList() once a
+// week's recipes are locked in.
+function recipeCost(recipe, location = "") {
+  return (recipe.ingredients || []).reduce((s, i) => s + i.qty * estimatePrice(i.name, location).price, 0);
+}
+
+function scoreCombo(recipes, target, dailyBudget = null, location = "") {
   const totals = recipes.reduce(
     (acc, r) => ({
       calories: acc.calories + r.perServing.calories,
@@ -1760,22 +3276,31 @@ function scoreCombo(recipes, target) {
     }),
     { calories: 0, protein: 0, carbs: 0, fat: 0 }
   );
+  const cost = recipes.reduce((s, r) => s + recipeCost(r, location), 0);
   const err = (a, b) => (b > 0 ? Math.abs(a - b) / b : 0);
-  const score =
+  let score =
     err(totals.calories, target.calories) * 2 +
     err(totals.protein, target.protein) +
     err(totals.carbs, target.carbs) +
     err(totals.fat, target.fat);
-  return { totals, score };
+  // Budget is a real selection criterion, not just an after-the-fact report:
+  // combos that blow past the daily budget share get penalized heavily so
+  // affordable-but-slightly-worse-macro-fit combos rank above them.
+  if (dailyBudget != null && dailyBudget > 0 && cost > dailyBudget) {
+    score += ((cost - dailyBudget) / dailyBudget) * 3;
+  }
+  return { totals, score, cost };
 }
 
 // Brute-forces every breakfast x lunch x dinner x snack-subset combination
 // for ONE day (≈1000+ combos with 6 recipes per slot — trivial client-side),
-// scores each against the daily macro target. Used as the building block for
-// the two-variant weekly layout below.
+// scores each against the daily macro target AND (if a budget was set) the
+// daily budget share. Used as the building block for the two-variant weekly
+// layout below.
 const DAILY_SCALE_OPTIONS = [0.75, 1, 1.25];
 
-function rankDailyCombos({ target }) {
+function rankDailyCombos({ target, weeklyBudget, location = "" }) {
+  const dailyBudget = weeklyBudget > 0 ? weeklyBudget / 7 : null;
   const results = [];
   const breakfasts = COOKBOOK.breakfast.flatMap((r) => DAILY_SCALE_OPTIONS.map((f) => scaleRecipe(r, f)));
   const lunches = COOKBOOK.lunch.flatMap((r) => DAILY_SCALE_OPTIONS.map((f) => scaleRecipe(r, f)));
@@ -1785,8 +3310,8 @@ function rankDailyCombos({ target }) {
       for (const d of dinners) {
         for (const snackSet of combosOfSnacks(COOKBOOK.snack)) {
           const recipes = [b, l, d, ...snackSet];
-          const { totals, score } = scoreCombo(recipes, target);
-          results.push({ recipes, totals, score });
+          const { totals, score, cost } = scoreCombo(recipes, target, dailyBudget, location);
+          results.push({ recipes, totals, score, cost });
         }
       }
     }
@@ -1808,8 +3333,8 @@ const WEEK_DAY_LABELS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
 const COMBO_A_DAYS = [0, 2, 4, 6]; // Mon, Wed, Fri, Sun — 4 days
 const COMBO_B_DAYS = [1, 3, 5]; // Tue, Thu, Sat — 3 days
 
-function generateCookbookWeek({ target, weeklyBudget }) {
-  const ranked = rankDailyCombos({ target });
+function generateCookbookWeek({ target, weeklyBudget, location = "" }) {
+  const ranked = rankDailyCombos({ target, weeklyBudget, location });
   if (!ranked.length) return null;
   const comboA = ranked[0];
   const comboBraw = ranked.find((r) => {
@@ -1825,7 +3350,7 @@ function generateCookbookWeek({ target, weeklyBudget }) {
     ...comboA.recipes.map((r) => ({ recipe: r, count: COMBO_A_DAYS.length })),
     ...comboB.recipes.map((r) => ({ recipe: r, count: COMBO_B_DAYS.length })),
   ];
-  const groceries = weeklyGroceryList(recipeCounts);
+  const groceries = weeklyGroceryList(recipeCounts, location);
   const weeklyCost = groceries.reduce((s, g) => s + g.cost, 0);
   const avgDaily = {
     calories: (comboA.totals.calories * COMBO_A_DAYS.length + comboB.totals.calories * COMBO_B_DAYS.length) / 7,
@@ -1851,22 +3376,26 @@ function generateCookbookWeek({ target, weeklyBudget }) {
 // sync: the number of meals generated matches the number of slots you set
 // up, and each one is picked for that slot's specific macros.
 // ---------------------------------------------------------------------------
-function scoreRecipeForSlot(recipe, slot) {
+function scoreRecipeForSlot(recipe, slot, mealBudget = null, location = "") {
   const p = recipe.perServing;
   const err = (a, b) => (b > 0 ? Math.abs(a - b) / b : 0);
   // Protein weighted heaviest — it's usually the tightest constraint for a
   // bodybuilder's per-meal target — with calories as a lighter tiebreaker.
-  return (
+  let score =
     err(p.protein, slot.protein) * 2 +
     err(p.carbs, slot.carbs) +
     err(p.fat, slot.fat) +
-    err(p.calories, slot.calories) * 0.25
-  );
+    err(p.calories, slot.calories) * 0.25;
+  if (mealBudget != null && mealBudget > 0) {
+    const cost = recipeCost(recipe, location);
+    if (cost > mealBudget) score += ((cost - mealBudget) / mealBudget) * 2;
+  }
+  return score;
 }
 
 const SLOT_SCALE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
-function generateCookbookWeekFromMealSlots({ mealSlots, weeklyBudget }) {
+function generateCookbookWeekFromMealSlots({ mealSlots, weeklyBudget, location = "" }) {
   const baseRecipes = [
     ...COOKBOOK.breakfast,
     ...COOKBOOK.lunch,
@@ -1896,22 +3425,42 @@ function generateCookbookWeekFromMealSlots({ mealSlots, weeklyBudget }) {
 
   if (!slots.length) return null;
 
+  // Rough per-meal budget share: split the weekly budget across 7 days,
+  // then across however many meal slots are set up. Heuristic, not exact —
+  // matches the same best-effort spirit as the rest of the cost estimation.
+  const mealBudget = weeklyBudget > 0 ? weeklyBudget / 7 / slots.length : null;
+
   const comboARecipes = [];
   const comboBRecipes = [];
   const slotLabels = [];
+  // Track which base recipes have already been assigned to a slot in each
+  // combo — without this, two different meal slots (e.g. "Meal 1" and
+  // "Meal 4") can independently pick the same closest-fitting recipe if
+  // their macro targets are similar, which is exactly the "same meal twice"
+  // bug. Only fall back to reusing a recipe once every option is exhausted
+  // (unavoidable with a small library and many slots).
+  const usedInA = new Set();
+  const usedInB = new Set();
+  const pickUnused = (ranked, used) => ranked.find((r) => !used.has(r.baseId || r.id)) || ranked[0];
 
   slots.forEach((slot) => {
     const ranked = [...allVariants].sort(
-      (a, b) => scoreRecipeForSlot(a, slot) - scoreRecipeForSlot(b, slot)
+      (a, b) => scoreRecipeForSlot(a, slot, mealBudget, location) - scoreRecipeForSlot(b, slot, mealBudget, location)
     );
-    const best = ranked[0];
-    // Combo B should be a genuinely different dish, not just a different
-    // portion size of the same one — compare baseId, not the scaled id.
-    const nextDifferent =
-      ranked.find((r) => (r.baseId || r.id) !== (best.baseId || best.id)) ||
-      ranked[Math.min(1, ranked.length - 1)];
-    comboARecipes.push(best);
-    comboBRecipes.push(nextDifferent);
+
+    const bestA = pickUnused(ranked, usedInA);
+    usedInA.add(bestA.baseId || bestA.id);
+    comboARecipes.push(bestA);
+
+    // Combo B should be a genuinely different dish from what THIS slot got
+    // in Combo A, and from anything already used elsewhere in Combo B —
+    // compare baseId, not the scaled id, so different portion sizes of the
+    // same dish still count as the same recipe for dedup purposes.
+    const rankedForB = ranked.filter((r) => (r.baseId || r.id) !== (bestA.baseId || bestA.id));
+    const bestB = pickUnused(rankedForB.length ? rankedForB : ranked, usedInB);
+    usedInB.add(bestB.baseId || bestB.id);
+    comboBRecipes.push(bestB);
+
     slotLabels.push(slot.label);
   });
 
@@ -1933,7 +3482,7 @@ function generateCookbookWeekFromMealSlots({ mealSlots, weeklyBudget }) {
     ...comboA.recipes.map((r) => ({ recipe: r, count: COMBO_A_DAYS.length })),
     ...comboB.recipes.map((r) => ({ recipe: r, count: COMBO_B_DAYS.length })),
   ];
-  const groceries = weeklyGroceryList(recipeCounts);
+  const groceries = weeklyGroceryList(recipeCounts, location);
   const weeklyCost = groceries.reduce((s, g) => s + g.cost, 0);
   const avgDaily = {
     calories: (comboA.totals.calories * COMBO_A_DAYS.length + comboB.totals.calories * COMBO_B_DAYS.length) / 7,
@@ -1965,7 +3514,7 @@ function generateCookbookWeekFromMealSlots({ mealSlots, weeklyBudget }) {
 // good (cook once → freeze the overflow if you've asked for more days than
 // it can safely hold in the fridge).
 // ---------------------------------------------------------------------------
-function BatchPrepPlanner() {
+function BatchPrepPlanner({ location }) {
   const allRecipes = useMemo(
     () => [
       ...COOKBOOK.breakfast.map((r) => ({ ...r, slot: "Breakfast" })),
@@ -1985,9 +3534,9 @@ function BatchPrepPlanner() {
   const shelf = cookedShelfLife(recipe.ingredients.map((i) => i.name));
   const fitsFridge = days <= shelf.fridgeDays;
   const scaled = recipe.ingredients.map((i) => {
-    const est = estimatePrice(i.name);
     const qty = i.qty * days;
-    return { name: i.name, qty, unit: est.unit, cost: qty * est.price };
+    const purchase = estimatePurchase(i.name, qty, location);
+    return { name: i.name, qty, unit: purchase.unit, cost: purchase.cost, packagesToBuy: purchase.packagesToBuy, packageLabel: purchase.packageLabel };
   });
   const totalCost = scaled.reduce((s, i) => s + i.cost, 0);
 
@@ -2042,7 +3591,12 @@ function BatchPrepPlanner() {
             {scaled.map((ing, i) => (
               <div key={i} className="flex items-center justify-between text-xs">
                 <span className="text-zinc-300 capitalize">{ing.name}</span>
-                <span className="text-zinc-500">{ing.qty.toFixed(2)} {ing.unit} · ${ing.cost.toFixed(2)}</span>
+                <div className="text-right">
+                  <div className="text-zinc-500">${ing.cost.toFixed(2)}</div>
+                  <div className="text-zinc-600 text-[10px]">
+                    need {ing.qty.toFixed(2)} {ing.unit} · buy {ing.packagesToBuy} {ing.packageLabel}{ing.packagesToBuy === 1 ? "" : "s"}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -2081,7 +3635,7 @@ function dateAtOffset(n) {
   return d.toISOString().slice(0, 10);
 }
 
-function WeekView({ meals, log, setLog, activeProgramKey, target, mealSlots = [], weeklyBudget, setMeals, programStartDate }) {
+function WeekView({ meals, log, setLog, activeProgramKey, target, mealSlots = [], weeklyBudget, setMeals, programStartDate, location }) {
   const program = PROGRAMS[activeProgramKey];
   const [filling, setFilling] = useState(null); // date currently being filled
   const hasPerMealTargets = mealSlots.length > 0;
@@ -2109,7 +3663,7 @@ function WeekView({ meals, log, setLog, activeProgramKey, target, mealSlots = []
       }
       const dayLog = log[date] || { plan: [], entries: {} };
       const plannedMeals = dayLog.plan.map((id) => meals.find((m) => m.id === id)).filter(Boolean);
-      const cost = plannedMeals.reduce((s, m) => s + mealCost(m), 0);
+      const cost = plannedMeals.reduce((s, m) => s + mealCost(m, location), 0);
       const macros = plannedMeals.reduce(
         (acc, m) => ({
           calories: acc.calories + (m.calories || 0),
@@ -2121,7 +3675,7 @@ function WeekView({ meals, log, setLog, activeProgramKey, target, mealSlots = []
       );
       return { date, label, dateLabel, trainingDay, plannedMeals, cost, macros };
     });
-  }, [log, meals, program, programStartDate]);
+  }, [log, meals, program, programStartDate, location]);
 
   const weekCost = days.reduce((s, d) => s + d.cost, 0);
   const overBudget = weeklyBudget > 0 && weekCost > weeklyBudget;
@@ -2133,10 +3687,10 @@ function WeekView({ meals, log, setLog, activeProgramKey, target, mealSlots = []
     if (hasPerMealTargets) {
       // Same matching as the Generate tab's Combo A — one best-fit recipe
       // per meal slot you set up in Prep, not just a whole-day guess.
-      const result = generateCookbookWeekFromMealSlots({ mealSlots, weeklyBudget });
+      const result = generateCookbookWeekFromMealSlots({ mealSlots, weeklyBudget, location });
       recipes = result ? result.comboA.recipes : [];
     } else {
-      const ranked = rankDailyCombos({ target });
+      const ranked = rankDailyCombos({ target, weeklyBudget, location });
       recipes = ranked[0] ? ranked[0].recipes : [];
     }
     if (!recipes.length) { setFilling(null); return; }
@@ -2174,7 +3728,7 @@ function WeekView({ meals, log, setLog, activeProgramKey, target, mealSlots = []
         Cost only counts days you've actually planned meals for; use "Fill with Cookbook" on empty days to fill them in. Training day info moved to the Today and Train tabs — this view is meals only.
       </p>
 
-      <BatchPrepPlanner />
+      <BatchPrepPlanner location={location} />
 
       {days.map((d) => {
         const dayShelf = d.plannedMeals.length
@@ -2233,7 +3787,7 @@ function WeekView({ meals, log, setLog, activeProgramKey, target, mealSlots = []
   );
 }
 
-function CookbookTab({ goals, mealSlots = [], setMeals, setLog, meals, log, activeProgramKey, programStartDates }) {
+function CookbookTab({ goals, mealSlots = [], setMeals, setLog, meals, log, activeProgramKey, programStartDates, location }) {
   const [view, setView] = useState("generate"); // "generate" | "week"
   const target = {
     calories: Number(goals.calories) || 0,
@@ -2257,8 +3811,8 @@ function CookbookTab({ goals, mealSlots = [], setMeals, setLog, meals, log, acti
     // what keeps the number of meals and each meal's macros in sync with
     // what was configured in Prep, rather than only matching the daily total.
     const result = hasPerMealTargets
-      ? generateCookbookWeekFromMealSlots({ mealSlots: usableMealSlots, weeklyBudget })
-      : generateCookbookWeek({ target, weeklyBudget });
+      ? generateCookbookWeekFromMealSlots({ mealSlots: usableMealSlots, weeklyBudget, location })
+      : generateCookbookWeek({ target, weeklyBudget, location });
     setWeek(result);
     setAddedDays({});
     setOpenRecipe(null);
@@ -2312,7 +3866,7 @@ function CookbookTab({ goals, mealSlots = [], setMeals, setLog, meals, log, acti
       </div>
 
       {view === "week" && (
-        <WeekView meals={meals} log={log} setLog={setLog} activeProgramKey={activeProgramKey} target={target} mealSlots={usableMealSlots} weeklyBudget={weeklyBudget} setMeals={setMeals} programStartDate={programStartDates?.[activeProgramKey]} />
+        <WeekView meals={meals} log={log} setLog={setLog} activeProgramKey={activeProgramKey} target={target} mealSlots={usableMealSlots} weeklyBudget={weeklyBudget} setMeals={setMeals} programStartDate={programStartDates?.[activeProgramKey]} location={location} />
       )}
 
       {view === "generate" && (
@@ -2445,7 +3999,12 @@ function CookbookTab({ goals, mealSlots = [], setMeals, setLog, meals, log, acti
                   {week.groceries.map((g, i) => (
                     <div key={i} className="flex items-center justify-between text-sm">
                       <span className="text-zinc-300 capitalize">{g.name}</span>
-                      <span className="text-zinc-500 text-xs">{g.qty.toFixed(2)} {g.unit} · ${g.cost.toFixed(2)}{g.guessed ? " *" : ""}</span>
+                      <div className="text-right">
+                        <div className="text-zinc-500 text-xs">${g.cost.toFixed(2)}{g.guessed ? " *" : ""}</div>
+                        <div className="text-zinc-600 text-[10px]">
+                          need {g.qty.toFixed(2)} {g.unit} · buy {g.packagesToBuy} {g.packageLabel}{g.packagesToBuy === 1 ? "" : "s"}
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2712,7 +4271,7 @@ function CustomFoodForm({ onSave }) {
 // guidance for each ingredient. Selections persist under "groceryPlan"
 // (recipeId -> servings) so the plan survives a refresh.
 // ---------------------------------------------------------------------------
-function GroceryTab({ groceryPlan, setGroceryPlan, meals }) {
+function GroceryTab({ groceryPlan, setGroceryPlan, meals, location }) {
   const [openRecipe, setOpenRecipe] = useState(null);
   const allRecipes = useMemo(
     () => [
@@ -2735,8 +4294,8 @@ function GroceryTab({ groceryPlan, setGroceryPlan, meals }) {
 
   const combinedGroceries = useMemo(() => {
     if (!selected.length) return [];
-    return weeklyGroceryList(selected.map((r) => ({ recipe: r, count: groceryPlan[r.id] })));
-  }, [selected, groceryPlan]);
+    return weeklyGroceryList(selected.map((r) => ({ recipe: r, count: groceryPlan[r.id] })), location);
+  }, [selected, groceryPlan, location]);
   const combinedCost = combinedGroceries.reduce((s, g) => s + g.cost, 0);
 
   return (
@@ -2757,7 +4316,12 @@ function GroceryTab({ groceryPlan, setGroceryPlan, meals }) {
             {combinedGroceries.map((g, i) => (
               <div key={i} className="flex items-center justify-between text-sm">
                 <span className="text-zinc-300 capitalize">{g.name}</span>
-                <span className="text-zinc-500 text-xs">{g.qty.toFixed(2)} {g.unit} · ${g.cost.toFixed(2)}{g.guessed ? " *" : ""}</span>
+                <div className="text-right">
+                  <div className="text-zinc-500 text-xs">${g.cost.toFixed(2)}{g.guessed ? " *" : ""}</div>
+                  <div className="text-zinc-600 text-[10px]">
+                    need {g.qty.toFixed(2)} {g.unit} · buy {g.packagesToBuy} {g.packageLabel}{g.packagesToBuy === 1 ? "" : "s"}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -2783,6 +4347,7 @@ function GroceryTab({ groceryPlan, setGroceryPlan, meals }) {
                   onToggleActive={() => toggle(r.id)}
                   onServings={(n) => setServings(r.id, n)}
                   onToggleOpen={() => setOpenRecipe(openRecipe === r.id ? null : r.id)}
+                  location={location}
                 />
               ))}
             </div>
@@ -2807,12 +4372,18 @@ function GroceryTab({ groceryPlan, setGroceryPlan, meals }) {
   );
 }
 
-function GroceryRecipeCard({ recipe, servings, active, open, onToggleActive, onServings, onToggleOpen }) {
+function GroceryRecipeCard({ recipe, servings, active, open, onToggleActive, onServings, onToggleOpen, location }) {
   const scaled = recipe.ingredients.map((i) => {
-    const est = estimatePrice(i.name);
     const qty = i.qty * (servings || 1);
-    return { name: i.name, qty, unit: est.unit, cost: qty * est.price, shelf: estimateShelfLife(i.name) };
+    const purchase = estimatePurchase(i.name, qty, location);
+    return { name: i.name, qty, unit: purchase.unit, cost: purchase.cost, packagesToBuy: purchase.packagesToBuy, packageLabel: purchase.packageLabel, shelf: estimateShelfLife(i.name) };
   });
+  const shelf = cookedShelfLife(recipe.ingredients.map((i) => i.name));
+  // Servings here doubles as "days you'll be eating this" (same ~1
+  // serving/day assumption BatchPrepPlanner uses) — if that's more days
+  // than the cooked dish actually holds in the fridge, warn before the
+  // person buys ingredients for a batch that'll spoil before it's eaten.
+  const willSpoil = active && (servings || 1) > shelf.fridgeDays;
 
   return (
     <div className={`bg-zinc-900 border rounded-xl overflow-hidden ${active ? "border-orange-700/60" : "border-zinc-800"}`}>
@@ -2836,18 +4407,28 @@ function GroceryRecipeCard({ recipe, servings, active, open, onToggleActive, onS
       </div>
 
       {active && (
-        <div className="px-3 pb-3 flex items-center gap-2">
-          <SlidersHorizontal size={13} className="text-zinc-500 shrink-0" />
-          <input
-            type="range"
-            min="1"
-            max="14"
-            step="1"
-            value={servings || 1}
-            onChange={(e) => onServings(Number(e.target.value))}
-            className="flex-1 accent-orange-600"
-          />
-          <span className="text-sm font-semibold text-orange-500 w-24 text-right shrink-0">{servings} serving{servings === 1 ? "" : "s"}</span>
+        <div className="px-3 pb-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal size={13} className="text-zinc-500 shrink-0" />
+            <input
+              type="range"
+              min="1"
+              max="14"
+              step="1"
+              value={servings || 1}
+              onChange={(e) => onServings(Number(e.target.value))}
+              className="flex-1 accent-orange-600"
+            />
+            <span className="text-sm font-semibold text-orange-500 w-24 text-right shrink-0">{servings} serving{servings === 1 ? "" : "s"}</span>
+          </div>
+          {willSpoil && (
+            <div className="rounded-lg p-2.5 flex items-start gap-2 text-xs bg-red-950/40 border border-red-900/50">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5 text-red-500" />
+              <span className="text-red-400">
+                This dish only holds ~{shelf.fridgeDays} day{shelf.fridgeDays === 1 ? "" : "s"} in the fridge, but {servings} servings is more than that (assuming ~1 serving/day). Freeze what you won't eat within {shelf.fridgeDays} day{shelf.fridgeDays === 1 ? "" : "s"} (freezer: {shelf.freezer}) or drop the serving count.
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -2858,11 +4439,17 @@ function GroceryRecipeCard({ recipe, servings, active, open, onToggleActive, onS
               Ingredients {active ? `(scaled to ${servings})` : "(per serving — select above to scale)"}
             </div>
             <div className="space-y-1.5">
-              {(active ? scaled : recipe.ingredients.map((i) => ({ name: i.name, qty: i.qty, unit: estimatePrice(i.name).unit, cost: i.qty * estimatePrice(i.name).price, shelf: estimateShelfLife(i.name) }))).map((ing, i) => (
+              {(active ? scaled : recipe.ingredients.map((i) => {
+                const purchase = estimatePurchase(i.name, i.qty, location);
+                return { name: i.name, qty: i.qty, unit: purchase.unit, cost: purchase.cost, packagesToBuy: purchase.packagesToBuy, packageLabel: purchase.packageLabel, shelf: estimateShelfLife(i.name) };
+              })).map((ing, i) => (
                 <div key={i} className="text-xs">
                   <div className="flex items-center justify-between">
                     <span className="text-zinc-300 capitalize">{ing.name}</span>
-                    <span className="text-zinc-500">{ing.qty.toFixed(2)} {ing.unit} · ${ing.cost.toFixed(2)}</span>
+                    <span className="text-zinc-500">${ing.cost.toFixed(2)}</span>
+                  </div>
+                  <div className="text-zinc-600 text-[10px] mt-0.5">
+                    need {ing.qty.toFixed(2)} {ing.unit} · buy {ing.packagesToBuy} {ing.packageLabel}{ing.packagesToBuy === 1 ? "" : "s"}
                   </div>
                   <div className="text-zinc-600 flex items-center gap-1 mt-0.5">
                     <Clock size={10} className="shrink-0" />
@@ -3000,10 +4587,6 @@ function RemindersTab({ meals, mealTimes, setMealTimes, log, mealSlots, setMealS
 
 function MealForm({ onSave }) {
   const [name, setName] = useState("");
-  const [calories, setCalories] = useState("");
-  const [protein, setProtein] = useState("");
-  const [carbs, setCarbs] = useState("");
-  const [fat, setFat] = useState("");
   const [ingredients, setIngredients] = useState([{ name: "", qty: "" }]);
 
   const updateIng = (i, field, val) => {
@@ -3012,15 +4595,28 @@ function MealForm({ onSave }) {
   const addRow = () => setIngredients((prev) => [...prev, { name: "", qty: "" }]);
   const removeRow = (i) => setIngredients((prev) => prev.filter((_, idx) => idx !== i));
 
+  // Live-computed macros from the ingredient list — mirrors how price is
+  // already estimated live via estimatePrice() as ingredients are typed.
+  // Manual calorie/protein/carb/fat entry has been removed entirely: there
+  // is no longer a number here that can drift from what's actually in the
+  // ingredient list (the exact failure mode this replaced — see MACRO_TABLE
+  // comment above for the audit that found it).
+  const liveMacros = useMemo(() => {
+    const clean = ingredients
+      .filter((i) => i.name.trim())
+      .map((i) => ({ name: i.name.trim(), qty: Number(i.qty) || 0 }));
+    return mealMacros(clean);
+  }, [ingredients]);
+
   const submit = () => {
     if (!name.trim()) return;
     const clean = ingredients.filter((i) => i.name.trim());
     onSave({
       name: name.trim(),
-      calories: Number(calories) || 0,
-      protein: Number(protein) || 0,
-      carbs: Number(carbs) || 0,
-      fat: Number(fat) || 0,
+      calories: liveMacros.calories,
+      protein: liveMacros.protein,
+      carbs: liveMacros.carbs,
+      fat: liveMacros.fat,
       ingredients: clean.map((i) => {
         const est = estimatePrice(i.name);
         return { name: i.name.trim(), qty: i.qty.trim() || "1", unit: est.unit, price: est.price, guessed: !!est.guessed };
@@ -3031,11 +4627,17 @@ function MealForm({ onSave }) {
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
       <input className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm" placeholder="Meal name (e.g. Chicken Rice Bowl)" value={name} onChange={(e) => setName(e.target.value)} />
-      <div className="grid grid-cols-4 gap-2">
-        <input type="number" className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-2 text-sm" placeholder="kcal" value={calories} onChange={(e) => setCalories(e.target.value)} />
-        <input type="number" className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-2 text-sm" placeholder="protein g" value={protein} onChange={(e) => setProtein(e.target.value)} />
-        <input type="number" className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-2 text-sm" placeholder="carbs g" value={carbs} onChange={(e) => setCarbs(e.target.value)} />
-        <input type="number" className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-2 text-sm" placeholder="fat g" value={fat} onChange={(e) => setFat(e.target.value)} />
+      <div className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5">
+        <div className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-1">Computed from ingredients below</div>
+        <div className="flex items-center gap-3 text-sm">
+          <span className="font-semibold text-zinc-200">{liveMacros.calories} kcal</span>
+          <MacroInline protein={liveMacros.protein} carbs={liveMacros.carbs} fat={liveMacros.fat} />
+        </div>
+        {liveMacros.unmatched.length > 0 && (
+          <div className="text-[11px] text-amber-500 mt-1.5">
+            No macro data for: {liveMacros.unmatched.join(", ")} — those ingredients aren't counted above. Check spelling or use a more common name.
+          </div>
+        )}
       </div>
       <div className="space-y-2">
         <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Ingredients</div>
@@ -3133,7 +4735,7 @@ function getExerciseHistory(workoutLogs, programKey, dayIndex, exerciseName, tar
   return rows;
 }
 
-function TrainTab({ activeProgramKey, setActiveProgramKey, workoutLogs, setWorkoutLogs, programStartDates, setProgramStartDates, trainingMaxes, setTrainingMaxes }) {
+function TrainTab({ activeProgramKey, setActiveProgramKey, workoutLogs, setWorkoutLogs, programStartDates, setProgramStartDates, trainingMaxes, setTrainingMaxes, personalRecords, setPersonalRecords, setPrXpEvents }) {
   const [dayIndex, setDayIndex] = useState(0);
   const [showGuide, setShowGuide] = useState(false);
   const program = PROGRAMS[activeProgramKey];
@@ -3149,6 +4751,8 @@ function TrainTab({ activeProgramKey, setActiveProgramKey, workoutLogs, setWorko
   const todaySlot = program.weeklySchedule ? program.weeklySchedule[mondayFirstIndex] : null;
   const todayIsRest = todaySlot?.rest === true;
 
+  const [justHitPR, setJustHitPR] = useState(null); // { exerciseName, record } | null — cleared when a new set is logged
+
   const logSet = (exerciseName, setIndex, data) => {
     setWorkoutLogs((prev) => {
       const session = { ...(prev[dayKey] || {}) };
@@ -3157,6 +4761,24 @@ function TrainTab({ activeProgramKey, setActiveProgramKey, workoutLogs, setWorko
       session[exerciseName] = ex;
       return { ...prev, [dayKey]: session };
     });
+
+    // PR check runs on every logged set, not just AMRAP sets — a PR can
+    // happen on any set, and gating this to AMRAP-only would silently miss
+    // real PRs on straight-weight days.
+    const prResult = checkForPR(exerciseName, data, personalRecords);
+    if (prResult.isNewPR) {
+      setPersonalRecords(prResult.updatedRecords);
+      setJustHitPR({ exerciseName, record: prResult.record });
+      // id includes date+exercise, so a second PR on the same exercise
+      // later the same day won't award XP twice — the record itself still
+      // updates to the new best, only the XP event is capped at one/day.
+      const xpEvent = {
+        id: `pr:${date}:${exerciseName}`, date, source: "pr_hit",
+        exerciseName, e1rm: prResult.record.e1rm, weight: prResult.record.weight, reps: prResult.record.reps, // snapshot for the Session 7 strength graph — same "record the moment, since only-current is stored elsewhere" reasoning as the rest of this ledger
+        ...awardXp("pr_hit", { exerciseName }),
+      };
+      setPrXpEvents((prev) => (prev.some((e) => e.id === xpEvent.id) ? prev : [...prev, xpEvent]));
+    }
   };
 
   const startProgram = () => {
@@ -3169,6 +4791,16 @@ function TrainTab({ activeProgramKey, setActiveProgramKey, workoutLogs, setWorko
 
   return (
     <div className="space-y-4">
+      {justHitPR && (
+        <div className="bg-orange-950/40 border border-orange-800/50 rounded-xl p-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm">
+            <Trophy size={16} className="text-orange-400" />
+            <span className="text-orange-200 font-medium">New PR — {justHitPR.exerciseName}</span>
+            <span className="text-zinc-400">{justHitPR.record.weight}×{justHitPR.record.reps} (e1RM {justHitPR.record.e1rm})</span>
+          </div>
+          <button onClick={() => setJustHitPR(null)} className="text-zinc-500 hover:text-zinc-300"><X size={14} /></button>
+        </div>
+      )}
       <div>
         <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Program</label>
         <select
