@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Check, X, Plus, Trash2, ChevronRight, ChevronDown, Dumbbell, UtensilsCrossed, ClipboardList, DollarSign, RotateCcw, Loader2, Flame, Info, BookOpen, Bell, ShoppingCart, Search, SlidersHorizontal, Clock, Trophy, TrendingUp, AlertTriangle } from "lucide-react";
+import { Check, X, Plus, Trash2, ChevronRight, ChevronDown, Dumbbell, UtensilsCrossed, ClipboardList, DollarSign, RotateCcw, Loader2, Flame, Info, BookOpen, Bell, ShoppingCart, Search, SlidersHorizontal, Clock, Trophy, TrendingUp, AlertTriangle, Play, Moon, HeartPulse } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Storage — localStorage-backed persistence.
@@ -89,6 +89,52 @@ const save = async (key, value) => {
 const uid = () => Math.random().toString(36).slice(2, 10);
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const round25 = (n) => Math.round(n / 2.5) * 2.5;
+
+// ---------------------------------------------------------------------------
+// Session 2 (Vision 2.0 — Fast Workout Logging) pure helpers.
+// Verified in a standalone Node script against 12 reference cases (plate
+// math for reachable/unreachable totals, warm-up ramps including the
+// dedupe/accessory-skip edge cases) before being wired in below.
+// ---------------------------------------------------------------------------
+
+// Greedy plate breakdown per side. [45,35,25,10,5,2.5] is a "canonical
+// denomination" set for greedy correctness (same class as US coin change),
+// verified against real reachable/unreachable totals rather than assumed.
+function plateCalculator(targetWeight, { barWeight = 45, availablePlates = [45, 35, 25, 10, 5, 2.5] } = {}) {
+  const sorted = [...availablePlates].sort((a, b) => b - a);
+  let perSideRemaining = Math.max(0, (targetWeight - barWeight) / 2);
+  const perSide = [];
+  sorted.forEach((p) => {
+    const count = Math.floor((perSideRemaining + 1e-9) / p);
+    if (count > 0) {
+      perSide.push({ plate: p, count });
+      perSideRemaining = Math.round((perSideRemaining - count * p) * 100) / 100;
+    }
+  });
+  const achievedPerSide = perSide.reduce((s, x) => s + x.plate * x.count, 0);
+  const achievedWeight = barWeight + achievedPerSide * 2;
+  return { perSide, achievedWeight, exact: Math.abs(achievedWeight - targetWeight) < 0.01, barWeight };
+}
+
+// Ramp of warm-up sets leading into a working weight. Skipped entirely for
+// light accessory work (<=1.5x bar weight) — a 4-step ramp into a 60lb
+// accessory lift adds friction with no benefit, which cuts against Vision
+// 2.0's "speed above everything" principle.
+function warmupSets(workingWeight, opts = {}) {
+  const { barWeight = 45, scheme = [{ pct: 0, reps: 8 }, { pct: 0.4, reps: 5 }, { pct: 0.6, reps: 3 }, { pct: 0.8, reps: 2 }] } = opts;
+  if (!workingWeight || workingWeight <= barWeight * 1.5) return [];
+  const seen = new Set();
+  const sets = [];
+  scheme.forEach(({ pct, reps }) => {
+    const raw = pct === 0 ? barWeight : round25(workingWeight * pct);
+    const weight = Math.max(barWeight, raw);
+    if (weight >= workingWeight) return;
+    if (seen.has(weight)) return;
+    seen.add(weight);
+    sets.push({ weight, reps });
+  });
+  return sets;
+}
 
 // ---------------------------------------------------------------------------
 // Design system — locked macro color trio (borrowed from the MyFitnessPal
@@ -1278,6 +1324,75 @@ function computeNutritionScore(foodLog, goals, today, windowDays = 30) {
 // Recovery: of the scheduled rest days in a trailing 30-day window, what
 // fraction were actually rested (no workout logged)? Training through
 // rest days pulls this down. Null for programs with no fixed schedule.
+// ---------------------------------------------------------------------------
+// Session 1 (Vision 2.0 — Home Screen Redesign) pure helpers.
+// Verified in a standalone Node script against 10 reference cases before
+// being wired in here: schedule resolution across rest/training days,
+// meal-total math (done/replaced/pending), and weekly consistency counting.
+// ---------------------------------------------------------------------------
+
+// Resolves which program day (or rest) is scheduled "today". Extracted out
+// of TrainTab's inline JSX logic so it's a single, testable, reusable
+// source of truth instead of the day-of-week math living only next to the
+// schedule banner text.
+function resolveTodaySlot(program, date = new Date()) {
+  if (!program.weeklySchedule) return { dayIndex: 0, isRest: false };
+  const mondayFirstIndex = (date.getDay() + 6) % 7;
+  const slot = program.weeklySchedule[mondayFirstIndex];
+  if (slot.rest) return { dayIndex: null, isRest: true };
+  return { dayIndex: slot.dayIndex, isRest: false };
+}
+
+// Pure extraction of the totals calc that used to live only inside
+// TodayTab's useMemo — lifted out unchanged so HomeTab can show the same
+// calories/protein-remaining numbers without a second, driftable copy.
+function computeDayTotals(meals, dayLog) {
+  const plan = dayLog?.plan || [];
+  const entries = dayLog?.entries || {};
+  const plannedMeals = plan.map((id) => meals.find((m) => m.id === id)).filter(Boolean);
+  let cals = 0, planned = 0, protein = 0, carbs = 0, fat = 0, protPlanned = 0, carbPlanned = 0, fatPlanned = 0;
+  plannedMeals.forEach((m) => {
+    const e = entries[m.id];
+    planned += m.calories || 0;
+    protPlanned += m.protein || 0;
+    carbPlanned += m.carbs || 0;
+    fatPlanned += m.fat || 0;
+    if (e?.status === "done") {
+      cals += m.calories || 0;
+      protein += m.protein || 0;
+      carbs += m.carbs || 0;
+      fat += m.fat || 0;
+    } else if (e?.status === "replaced") {
+      cals += e.calories || 0;
+    }
+  });
+  return { cals, planned, protein, carbs, fat, protPlanned, carbPlanned, fatPlanned };
+}
+
+// Fraction of this week's SCHEDULED TRAINING days (Mon..today, per the
+// program's weeklySchedule) that have at least one logged set. Distinct
+// from the existing workout streak (which tracks consecutive maintenance,
+// not "how much of this week did I actually hit"). Date-keys match against
+// workoutLogs using the same UTC-based todayStr() format the rest of the
+// app already uses for that object's keys — not local date math.
+function weeklyConsistency(program, workoutLogs, programKey, today = new Date()) {
+  if (!program.weeklySchedule) return null;
+  const mondayFirstIndex = (today.getDay() + 6) % 7;
+  let scheduled = 0, hit = 0;
+  for (let i = 0; i <= mondayFirstIndex; i++) {
+    const slot = program.weeklySchedule[i];
+    if (slot.rest) continue;
+    scheduled++;
+    const d = new Date(today);
+    d.setDate(d.getDate() - (mondayFirstIndex - i));
+    const dateStr = d.toISOString().slice(0, 10);
+    const dayKey = `${dateStr}|${programKey}|${slot.dayIndex}`;
+    const session = workoutLogs[dayKey];
+    if (session && Object.keys(session).length > 0) hit++;
+  }
+  return scheduled === 0 ? null : { hit, scheduled, pct: Math.round((hit / scheduled) * 100) };
+}
+
 function computeRecoveryScore(workoutLogs, program, today, windowDays = 30) {
   if (!program?.weeklySchedule) return null;
   const loggedDates = Object.keys(workoutLogs || {}).map((k) => k.split("|")[0]);
@@ -1759,6 +1874,20 @@ export default function App() {
     () => computeLongTermQuests({ xpState, streaks, prXpEvents }),
     [xpState, streaks, prXpEvents]
   );
+
+  // Session 1 (Vision 2.0 — Home Screen Redesign): today's meal totals and
+  // this week's training consistency, shared with HomeTab via the same
+  // computeDayTotals/weeklyConsistency helpers TodayTab and TrainTab use —
+  // no independent copy that could drift.
+  const todayDate = todayStr();
+  const todayDayLog = log[todayDate] || { plan: [], entries: {} };
+  const todayTotals = useMemo(() => computeDayTotals(meals, todayDayLog), [meals, todayDayLog]);
+  const activeProgram = PROGRAMS[activeProgramKey];
+  const todaySchedule = useMemo(() => resolveTodaySlot(activeProgram), [activeProgram]);
+  const weekConsistency = useMemo(
+    () => weeklyConsistency(activeProgram, workoutLogs, activeProgramKey),
+    [activeProgram, workoutLogs, activeProgramKey]
+  );
   const recentUnlocks = useMemo(() => computeRecentUnlocks(achievementUnlocks, 5), [achievementUnlocks]);
   const exercisesWithHistory = useMemo(() => listExercisesWithHistory(prXpEvents), [prXpEvents]);
   const bodyMetricsTrend = useMemo(() => computeBodyMetricsTrend(bodyMetrics), [bodyMetrics]);
@@ -1867,6 +1996,11 @@ export default function App() {
             dailyQuests={dailyQuests}
             longTermQuests={longTermQuests}
             recentUnlocks={recentUnlocks}
+            goals={goals}
+            todayTotals={todayTotals}
+            todaySchedule={todaySchedule}
+            activeProgram={activeProgram}
+            weekConsistency={weekConsistency}
             setTab={setTab}
           />
         )}
@@ -2047,11 +2181,86 @@ function AttributeBar({ label, value }) {
   );
 }
 
-function HomeTab({ xpState, streaks, attributes, dailyQuests, longTermQuests, recentUnlocks, setTab }) {
+function homeGreeting(date = new Date()) {
+  const h = date.getHours();
+  if (h < 5) return "Still up";
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  if (h < 21) return "Good evening";
+  return "Good evening";
+}
+
+function HomeTab({ xpState, streaks, attributes, dailyQuests, longTermQuests, recentUnlocks, goals, todayTotals, todaySchedule, activeProgram, weekConsistency, setTab }) {
   const dailyDone = dailyQuests.filter((q) => q.done).length;
+
+  const calorieTarget = Number(goals?.calories) || 0;
+  const proteinTarget = Number(goals?.protein) || 0;
+  const caloriesRemaining = calorieTarget > 0 ? Math.round(calorieTarget - todayTotals.cals) : null;
+  const proteinRemaining = proteinTarget > 0 ? Math.round(proteinTarget - todayTotals.protein) : null;
+
+  const sessionLabel = !todaySchedule.isRest && activeProgram?.days?.[todaySchedule.dayIndex]
+    ? activeProgram.days[todaySchedule.dayIndex].day
+    : null;
+
   return (
     <div className="space-y-4">
-      <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide">The Forge</h2>
+      <div>
+        <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide">The Forge</h2>
+        <p className="text-lg font-semibold text-zinc-100 mt-0.5">{homeGreeting()}.</p>
+      </div>
+
+      {todaySchedule.isRest ? (
+        <button
+          onClick={() => setTab("train")}
+          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-3 hover:border-zinc-700"
+        >
+          <Moon size={20} className="text-sky-400 shrink-0" />
+          <div className="text-left">
+            <div className="text-sm font-semibold text-zinc-200">Rest day</div>
+            <div className="text-xs text-zinc-500">No session scheduled today — tap to log anyway</div>
+          </div>
+        </button>
+      ) : (
+        <button
+          onClick={() => setTab("train")}
+          className="w-full bg-orange-600 hover:bg-orange-500 text-zinc-950 rounded-xl p-4 flex items-center gap-3 shadow-lg shadow-orange-950/30"
+        >
+          <Play size={20} className="shrink-0" fill="currentColor" />
+          <div className="text-left">
+            <div className="text-sm font-bold uppercase tracking-wide">Start today's workout</div>
+            {sessionLabel && <div className="text-xs font-medium opacity-80">{sessionLabel}</div>}
+          </div>
+        </button>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
+          <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">Calories left</div>
+          <div className="text-lg font-semibold text-zinc-100 mt-0.5">
+            {caloriesRemaining === null ? "—" : caloriesRemaining}
+          </div>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
+          <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">Protein left</div>
+          <div className="text-lg font-semibold text-zinc-100 mt-0.5">
+            {proteinRemaining === null ? "—" : `${proteinRemaining}g`}
+          </div>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
+          <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide flex items-center gap-1">
+            <HeartPulse size={11} /> Recovery
+          </div>
+          <div className="text-lg font-semibold text-zinc-100 mt-0.5">
+            {attributes.recovery == null ? "—" : Math.round(attributes.recovery)}
+          </div>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
+          <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">This week</div>
+          <div className="text-lg font-semibold text-zinc-100 mt-0.5">
+            {weekConsistency ? `${weekConsistency.hit}/${weekConsistency.scheduled}` : "—"}
+          </div>
+        </div>
+      </div>
 
       <XpBar xpState={xpState} />
 
@@ -2297,25 +2506,10 @@ function TodayTab({ meals, log, setLog, activeProgramKey, setActiveProgramKey, d
 
   const plannedMeals = dayLog.plan.map((id) => meals.find((m) => m.id === id)).filter(Boolean);
 
-  const totals = useMemo(() => {
-    let cals = 0, planned = 0, protein = 0, carbs = 0, fat = 0, protPlanned = 0, carbPlanned = 0, fatPlanned = 0;
-    plannedMeals.forEach((m) => {
-      const e = dayLog.entries[m.id];
-      planned += m.calories || 0;
-      protPlanned += m.protein || 0;
-      carbPlanned += m.carbs || 0;
-      fatPlanned += m.fat || 0;
-      if (e?.status === "done") {
-        cals += m.calories || 0;
-        protein += m.protein || 0;
-        carbs += m.carbs || 0;
-        fat += m.fat || 0;
-      } else if (e?.status === "replaced") {
-        cals += e.calories || 0;
-      }
-    });
-    return { cals, planned, protein, carbs, fat, protPlanned, carbPlanned, fatPlanned };
-  }, [plannedMeals, dayLog]);
+  // Shared with HomeTab via computeDayTotals (Session 1) — this used to be a
+  // locally-duplicated calc; now both tabs read the same numbers so they
+  // can never disagree.
+  const totals = useMemo(() => computeDayTotals(meals, dayLog), [meals, dayLog]);
 
   return (
     <div className="space-y-4">
@@ -4736,9 +4930,16 @@ function getExerciseHistory(workoutLogs, programKey, dayIndex, exerciseName, tar
 }
 
 function TrainTab({ activeProgramKey, setActiveProgramKey, workoutLogs, setWorkoutLogs, programStartDates, setProgramStartDates, trainingMaxes, setTrainingMaxes, personalRecords, setPersonalRecords, setPrXpEvents }) {
-  const [dayIndex, setDayIndex] = useState(0);
-  const [showGuide, setShowGuide] = useState(false);
   const program = PROGRAMS[activeProgramKey];
+  // Lazy initializer so opening Train (including via the Home Screen CTA)
+  // lands on today's actually-scheduled day instead of always day 0 — this
+  // was a real gap: the CTA promising "start today's workout" would have
+  // silently opened the wrong day on any program day other than day 0.
+  const [dayIndex, setDayIndex] = useState(() => {
+    const slot = resolveTodaySlot(program);
+    return slot.isRest ? 0 : slot.dayIndex;
+  });
+  const [showGuide, setShowGuide] = useState(false);
   const date = todayStr();
   const dayKey = `${date}|${activeProgramKey}|${dayIndex}`;
   const sessionSets = workoutLogs[dayKey] || {};
@@ -4746,10 +4947,9 @@ function TrainTab({ activeProgramKey, setActiveProgramKey, workoutLogs, setWorko
   const weekInfo = getProgramWeekInfo(activeProgramKey, startDate);
   const isBulldog = activeProgramKey === "bulldog";
 
-  const todayD = new Date();
-  const mondayFirstIndex = (todayD.getDay() + 6) % 7;
-  const todaySlot = program.weeklySchedule ? program.weeklySchedule[mondayFirstIndex] : null;
-  const todayIsRest = todaySlot?.rest === true;
+  const todaySlotInfo = resolveTodaySlot(program);
+  const todaySlot = todaySlotInfo.isRest ? { rest: true } : { dayIndex: todaySlotInfo.dayIndex };
+  const todayIsRest = todaySlotInfo.isRest;
 
   const [justHitPR, setJustHitPR] = useState(null); // { exerciseName, record } | null — cleared when a new set is logged
 
@@ -4792,13 +4992,16 @@ function TrainTab({ activeProgramKey, setActiveProgramKey, workoutLogs, setWorko
   return (
     <div className="space-y-4">
       {justHitPR && (
-        <div className="bg-orange-950/40 border border-orange-800/50 rounded-xl p-3 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm">
-            <Trophy size={16} className="text-orange-400" />
-            <span className="text-orange-200 font-medium">New PR — {justHitPR.exerciseName}</span>
-            <span className="text-zinc-400">{justHitPR.record.weight}×{justHitPR.record.reps} (e1RM {justHitPR.record.e1rm})</span>
+        <div className="bg-gradient-to-r from-orange-950/60 via-orange-900/40 to-orange-950/60 border border-orange-700/60 rounded-xl p-4 flex items-center justify-between shadow-lg shadow-orange-950/40">
+          <div className="flex items-center gap-3">
+            <Trophy size={28} className="text-amber-400 shrink-0" />
+            <div>
+              <div className="text-orange-200 font-bold text-base uppercase tracking-wide">New PR</div>
+              <div className="text-zinc-200 text-sm font-medium">{justHitPR.exerciseName}</div>
+              <div className="text-zinc-400 text-xs mt-0.5">{justHitPR.record.weight} lb × {justHitPR.record.reps} — e1RM {justHitPR.record.e1rm} lb</div>
+            </div>
           </div>
-          <button onClick={() => setJustHitPR(null)} className="text-zinc-500 hover:text-zinc-300"><X size={14} /></button>
+          <button onClick={() => setJustHitPR(null)} className="text-zinc-500 hover:text-zinc-300 self-start"><X size={16} /></button>
         </div>
       )}
       <div>
@@ -4908,6 +5111,47 @@ function TrainTab({ activeProgramKey, setActiveProgramKey, workoutLogs, setWorko
   );
 }
 
+function formatPlateBreakdown(perSide) {
+  if (!perSide.length) return "bar only";
+  return perSide.map((p) => `${p.count}×${p.plate}`).join(" + ");
+}
+
+// Auto-starts after a set is logged (SetRow controls when it mounts via
+// `justSaved`, not on initial render of an already-logged set — so opening
+// a session with prior sets doesn't spam timers). No new dependency: same
+// Notification pattern already used elsewhere in this file for reminders.
+function RestTimer({ initialSeconds = 90, onDismiss }) {
+  const [seconds, setSeconds] = useState(initialSeconds);
+  useEffect(() => {
+    if (seconds <= 0) return;
+    const id = setTimeout(() => setSeconds((s) => s - 1), 1000);
+    return () => clearTimeout(id);
+  }, [seconds]);
+  useEffect(() => {
+    if (seconds !== 0) return;
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      new Notification("Rest complete", { body: "Time for your next set." });
+    }
+  }, [seconds]);
+  const done = seconds <= 0;
+  const mm = String(Math.floor(Math.max(0, seconds) / 60)).padStart(2, "0");
+  const ss = String(Math.max(0, seconds) % 60).padStart(2, "0");
+  return (
+    <div className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 mt-1.5 text-xs ${done ? "bg-emerald-950/40 border border-emerald-800/50 text-emerald-400" : "bg-zinc-900 border border-zinc-800 text-zinc-300"}`}>
+      <span className="flex items-center gap-1.5"><Clock size={12} /> {done ? "Rest complete — go again" : `Resting: ${mm}:${ss}`}</span>
+      <div className="flex items-center gap-2.5">
+        {!done && (
+          <>
+            <button onClick={() => setSeconds((s) => Math.max(0, s - 15))} className="text-zinc-500 hover:text-zinc-300">−15s</button>
+            <button onClick={() => setSeconds((s) => s + 15)} className="text-zinc-500 hover:text-zinc-300">+15s</button>
+          </>
+        )}
+        <button onClick={onDismiss} className="text-zinc-500 hover:text-zinc-300"><X size={12} /></button>
+      </div>
+    </div>
+  );
+}
+
 function ExerciseLogger({ exercise, loggedSets, onLogSet, history, phasePrescription, trainingMax, weekInWave }) {
   const [open, setOpen] = useState(true);
   const setIndices = Array.from({ length: exercise.sets }, (_, i) => i);
@@ -4924,6 +5168,13 @@ function ExerciseLogger({ exercise, loggedSets, onLogSet, history, phasePrescrip
     : null;
   const phaseWeight = phasePrescription && trainingMax ? round25(trainingMax * phasePrescription.pct) : null;
 
+  // Warm-up ramp targets whatever weight the first working set is actually
+  // headed toward — logged set 1 if it exists yet, otherwise whatever
+  // suggestion is already being shown for it. Skipped for accessory work
+  // via the >1.5x-bar-weight threshold inside warmupSets itself.
+  const referenceWeight = Number(loggedSets[0]?.weight) || amrapSuggestion || phaseWeight || null;
+  const warmup = referenceWeight ? warmupSets(referenceWeight) : [];
+
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
       <button onClick={() => setOpen((s) => !s)} className="w-full flex items-center justify-between p-3.5">
@@ -4937,6 +5188,14 @@ function ExerciseLogger({ exercise, loggedSets, onLogSet, history, phasePrescrip
       </button>
       {open && (
         <div className="px-3.5 pb-3.5 border-t border-zinc-800 pt-3 space-y-2.5">
+          {warmup.length > 0 && (
+            <div className="bg-zinc-950 border border-sky-900/40 rounded-lg p-2.5 text-xs">
+              <div className="text-sky-400 font-medium flex items-center gap-1.5 mb-1"><Flame size={12} /> Warm-up</div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-zinc-400">
+                {warmup.map((w, i) => <span key={i}>{w.weight} lb × {w.reps}</span>)}
+              </div>
+            </div>
+          )}
           {exercise.amrap && (amrapSuggestion || phaseWeight) && (
             <div className="bg-zinc-950 border border-orange-900/40 rounded-lg p-2.5 text-xs">
               {amrapSuggestion ? (
@@ -4979,15 +5238,23 @@ function SetRow({ setNumber, targetReps, targetRir, data, prevData, onSave, isAm
   const [rir, setRir] = useState(data?.rir ?? "");
   const [notes, setNotes] = useState(data?.notes ?? "");
   const [saved, setSaved] = useState(!!data);
+  // Only true right after a fresh commit() in THIS session — not on mount
+  // from prior data — so re-opening a session with sets already logged
+  // doesn't spawn a timer for every one of them.
+  const [justSaved, setJustSaved] = useState(false);
 
   const suggestion = !isAmrapSet && prevData?.weight && prevData?.reps
     ? nextSetWeight({ weight: Number(prevData.weight), reps: Number(prevData.reps), rir: Number(prevData.rir), targetReps, targetRir })
     : null;
 
+  const plateTarget = Number(weight) || suggestion || null;
+  const plates = plateTarget ? plateCalculator(plateTarget) : null;
+
   const commit = () => {
     if (!weight || !reps) return;
     onSave({ weight, reps, rir, notes });
     setSaved(true);
+    setJustSaved(true);
   };
 
   return (
@@ -5008,6 +5275,12 @@ function SetRow({ setNumber, targetReps, targetRir, data, prevData, onSave, isAm
           {saved ? <Check size={15} className="mx-auto" /> : "Log"}
         </button>
       </div>
+      {plates && plates.perSide.length > 0 && (
+        <div className="text-[10px] text-zinc-600 mt-1.5">
+          Per side: {formatPlateBreakdown(plates.perSide)}{!plates.exact && ` (closest to ${plateTarget}, loads ${plates.achievedWeight})`}
+        </div>
+      )}
+      {justSaved && <RestTimer initialSeconds={90} onDismiss={() => setJustSaved(false)} />}
       <input
         placeholder="notes — how it felt, form cues, etc."
         value={notes}
