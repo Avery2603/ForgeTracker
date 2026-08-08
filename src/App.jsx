@@ -147,9 +147,9 @@ function warmupSets(workingWeight, opts = {}) {
 // they're already used for cost budget throughout the app.
 // ---------------------------------------------------------------------------
 const MACRO_COLORS = {
-  protein: { text: "text-sky-400", bg: "bg-sky-400", ring: "#38bdf8", dim: "text-sky-400/60" },
-  carbs: { text: "text-amber-400", bg: "bg-amber-400", ring: "#fbbf24", dim: "text-amber-400/60" },
-  fat: { text: "text-violet-400", bg: "bg-violet-400", ring: "#a78bfa", dim: "text-violet-400/60" },
+  protein: { text: "text-[#C4593F]", bg: "bg-[#C4593F]", ring: "#C4593F", dim: "text-[#C4593F]/60" },
+  carbs: { text: "text-[#C9A227]", bg: "bg-[#C9A227]", ring: "#C9A227", dim: "text-[#C9A227]/60" },
+  fat: { text: "text-[#6C93A6]", bg: "bg-[#6C93A6]", ring: "#6C93A6", dim: "text-[#6C93A6]/60" },
 };
 
 // Compact inline macro readout — "180P · 220C · 60F" but each number in its
@@ -159,9 +159,9 @@ function MacroInline({ protein, carbs, fat, size = "text-xs" }) {
   return (
     <span className={`${size} inline-flex items-center gap-1.5`}>
       <span className={MACRO_COLORS.protein.text}>{Math.round(protein || 0)}P</span>
-      <span className="text-zinc-700">·</span>
+      <span className="text-[#3A342C]">·</span>
       <span className={MACRO_COLORS.carbs.text}>{Math.round(carbs || 0)}C</span>
-      <span className="text-zinc-700">·</span>
+      <span className="text-[#3A342C]">·</span>
       <span className={MACRO_COLORS.fat.text}>{Math.round(fat || 0)}F</span>
     </span>
   );
@@ -175,14 +175,14 @@ function MacroBar({ label, color, val, tgt, unit = "g" }) {
   const over = tgt > 0 && val > tgt;
   return (
     <div>
-      <div className="flex justify-between text-xs text-zinc-400 mb-1">
+      <div className="flex justify-between text-xs text-[#A79E92] mb-1">
         <span className={color.text}>{label}</span>
-        <span className={over ? "text-red-500 font-medium" : "text-zinc-400"}>
+        <span className={over ? "text-[#C4593F] font-medium" : "text-[#A79E92]"}>
           {Math.round(val)}{unit} / {tgt}{unit}
         </span>
       </div>
-      <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${over ? "bg-red-500" : color.bg}`} style={{ width: `${pct}%` }} />
+      <div className="h-1.5 bg-[#241F1B] rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${over ? "bg-[#C4593F]" : color.bg}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
@@ -196,11 +196,11 @@ function CalorieRing({ value, target, size = 132, stroke = 11 }) {
   const c = 2 * Math.PI * r;
   const pct = target > 0 ? Math.min(1, value / target) : 0;
   const over = target > 0 && value > target;
-  const color = over ? "#ef4444" : "#f97316"; // red-500 / orange-500
+  const color = over ? "#C4593F" : "#C9A227"; // rust (over) / brass (on target)
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={r} stroke="#27272a" strokeWidth={stroke} fill="none" />
+        <circle cx={size / 2} cy={size / 2} r={r} stroke="#241F1B" strokeWidth={stroke} fill="none" />
         <circle
           cx={size / 2} cy={size / 2} r={r}
           stroke={color} strokeWidth={stroke} fill="none"
@@ -210,7 +210,7 @@ function CalorieRing({ value, target, size = 132, stroke = 11 }) {
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <div className="text-2xl font-black leading-none" style={{ color }}>{Math.round(value)}</div>
-        <div className="text-[10px] text-zinc-500 mt-1">{target > 0 ? `of ${target} kcal` : "kcal"}</div>
+        <div className="text-[10px] text-[#8C8378] mt-1">{target > 0 ? `of ${target} kcal` : "kcal"}</div>
       </div>
     </div>
   );
@@ -1050,8 +1050,63 @@ function deriveProteinXpEvents(foodLog, goals) {
 // PR-event ledger, de-dupes by id, sorts by date, and reduces to the
 // current totalXp/level. This is the single source of truth for xpState —
 // nothing else should compute totalXp independently.
-function computeXpState({ workoutLogs, foodLog, goals, prEvents = [] }) {
-  const allEvents = [...deriveWorkoutXpEvents(workoutLogs), ...deriveProteinXpEvents(foodLog, goals), ...prEvents];
+// Streak-milestone events are fully DERIVABLE from streaks.longest (the
+// historical high-water mark) — no new persisted ledger needed, unlike PR
+// events (personalRecords only stores the current best, so PR *moments*
+// can't be reconstructed after the fact — streaks.longest already IS the
+// all-time best, so milestone crossings can be). Event date uses lastDate
+// as the closest available approximation of when it happened; the exact
+// crossing day isn't stored, which doesn't affect the XP total.
+const STREAK_MILESTONES = [7, 14, 30, 60, 100];
+function deriveStreakMilestoneEvents(streaks) {
+  const events = [];
+  ["workout", "protein", "water"].forEach((type) => {
+    const s = streaks?.[type];
+    if (!s || !s.longest) return;
+    STREAK_MILESTONES.forEach((len) => {
+      if (s.longest >= len) {
+        events.push({
+          id: `streak:${type}:${len}`,
+          date: s.lastDate || "unknown",
+          source: "streak_milestone",
+          streakType: type,
+          ...awardXp("streak_milestone", { streakType: type, length: len }),
+        });
+      }
+    });
+  });
+  return events;
+}
+
+// XP category split (Session 4). A presentational lens over the SAME event
+// ledger, not a second accounting system — every event maps to exactly one
+// category, so category totals always sum back to the same totalXp below.
+// Recovery has no real XP source yet: flagged rather than faked with a
+// permanent 0, so the UI can show "not enough data" honestly.
+const XP_CATEGORY_BY_SOURCE = { workout_completed: "consistency", pr_hit: "strength", protein_goal_hit: "nutrition" };
+function categoryForStreakType(streakType) {
+  return streakType === "protein" ? "nutrition" : "discipline"; // workout, water -> discipline
+}
+function categoryForEvent(event) {
+  if (event.source === "streak_milestone") return categoryForStreakType(event.streakType);
+  return XP_CATEGORY_BY_SOURCE[event.source] || null;
+}
+function computeCategoryXp(xpHistory) {
+  const totals = { strength: 0, nutrition: 0, recovery: null, discipline: 0, consistency: 0 };
+  xpHistory.forEach((e) => {
+    const cat = categoryForEvent(e);
+    if (cat) totals[cat] += e.amount || 0;
+  });
+  return totals;
+}
+
+function computeXpState({ workoutLogs, foodLog, goals, streaks, prEvents = [] }) {
+  const allEvents = [
+    ...deriveWorkoutXpEvents(workoutLogs),
+    ...deriveProteinXpEvents(foodLog, goals),
+    ...deriveStreakMilestoneEvents(streaks),
+    ...prEvents,
+  ];
   const seen = new Set();
   const xpHistory = allEvents
     .filter((e) => {
@@ -1061,7 +1116,7 @@ function computeXpState({ workoutLogs, foodLog, goals, prEvents = [] }) {
     })
     .sort((a, b) => a.date.localeCompare(b.date));
   const totalXp = xpHistory.reduce((s, e) => s + (e.amount || 0), 0);
-  return { totalXp, level: levelForXp(totalXp), xpHistory };
+  return { totalXp, level: levelForXp(totalXp), xpHistory, categoryXp: computeCategoryXp(xpHistory) };
 }
 
 // ---------------------------------------------------------------------------
@@ -1477,15 +1532,129 @@ function computeAttributes({ workoutLogs, foodLog, goals, prXpEvents, activeProg
 // streak reset. Surfaced as a toast for now (Session 4 scope per roadmap);
 // a full gallery view is later.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Achievement-audit helpers (Session 4). New pure functions backing the
+// Vision 2.0 example achievements (100 workouts already existed as
+// century_club; these cover the rest: 365-day streak, bench bodyweight,
+// bench 315, deadlift 405, a million pounds lifted, a perfect nutrition
+// week, Never Miss Monday). Verified against 18 reference cases total
+// (shared with the category-XP checks above) before being wired in.
+// ---------------------------------------------------------------------------
+
+function computeLifetimeTonnage(workoutLogs) {
+  let total = 0;
+  Object.values(workoutLogs || {}).forEach((session) => {
+    Object.values(session || {}).forEach((sets) => {
+      Object.values(sets || {}).forEach((s) => {
+        if (s?.weight && s?.reps) total += Number(s.weight) * Number(s.reps);
+      });
+    });
+  });
+  return total;
+}
+
+// Literal "did THIS Monday have a logged workout" — one unit per calendar
+// week, forward walk from the earliest logged Monday through this week's,
+// same today-safe shape as computeWorkoutStreak: only a Monday that's
+// already passed without a log breaks the streak, not one still in
+// progress (i.e. today itself).
+function computeMondayStreak(workoutLogs, todayStr) {
+  const loggedDates = new Set(Object.keys(workoutLogs || {}).map((k) => k.split("|")[0]));
+  if (!loggedDates.size) return { current: 0, longest: 0 };
+  const mondayOf = (dateStr) => {
+    const d = new Date(dateStr + "T00:00:00Z");
+    const offset = (d.getUTCDay() + 6) % 7;
+    d.setUTCDate(d.getUTCDate() - offset);
+    return d.toISOString().slice(0, 10);
+  };
+  const startMonday = mondayOf(Array.from(loggedDates).sort()[0]);
+  const thisMonday = mondayOf(todayStr);
+  let current = 0, longest = 0;
+  let cursor = new Date(startMonday + "T00:00:00Z");
+  const end = new Date(thisMonday + "T00:00:00Z");
+  while (cursor <= end) {
+    const dateStr = cursor.toISOString().slice(0, 10);
+    if (loggedDates.has(dateStr)) {
+      current++;
+      longest = Math.max(longest, current);
+    } else if (dateStr !== todayStr) {
+      current = 0;
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 7);
+  }
+  return { current, longest };
+}
+
+// Stricter than the existing protein-only streak: requires calories within
+// ±10% of goal AND protein goal hit, same day, consecutively.
+function computePerfectNutritionStreak(foodLog, goals, todayStr, tolerancePct = 0.1) {
+  const calTarget = Number(goals?.calories) || 0;
+  const proteinTarget = Number(goals?.protein) || 0;
+  if (calTarget <= 0 || proteinTarget <= 0) return 0;
+  const loggedDates = Object.keys(foodLog || {});
+  if (!loggedDates.length) return 0;
+  const earliest = loggedDates.sort()[0];
+  const dates = [];
+  let d = new Date(earliest + "T00:00:00Z");
+  const end = new Date(todayStr + "T00:00:00Z");
+  while (d <= end) { dates.push(d.toISOString().slice(0, 10)); d.setUTCDate(d.getUTCDate() + 1); }
+  let current = 0, longest = 0;
+  dates.forEach((date) => {
+    const entries = foodLog[date] || [];
+    const cals = entries.reduce((s, e) => s + (Number(e.calories) || 0), 0);
+    const protein = entries.reduce((s, e) => s + (Number(e.protein) || 0), 0);
+    const withinCalBand = Math.abs(cals - calTarget) <= calTarget * tolerancePct;
+    const hitProtein = protein >= proteinTarget;
+    if (entries.length > 0 && withinCalBand && hitProtein) {
+      current++;
+      longest = Math.max(longest, current);
+    } else if (date !== todayStr) {
+      current = 0;
+    }
+  });
+  return longest;
+}
+
+function latestBodyweight(bodyMetrics) {
+  const dates = Object.keys(bodyMetrics || {}).sort();
+  if (!dates.length) return null;
+  return bodyMetrics[dates[dates.length - 1]]?.weightLbs ?? null;
+}
+
+// Reuses Session 3's EXERCISE_ALIASES so "bench 315" checks the best e1RM
+// across every bench variant name (Bench Press, Flat Bench Press, Flat
+// Barbell Press), not just whichever exact string happens to be logged —
+// same alias-resolution principle as the exercise profile page.
+function namesForCanonical(canonical) {
+  const names = [canonical];
+  Object.entries(EXERCISE_ALIASES).forEach(([alias, target]) => { if (target === canonical) names.push(alias); });
+  return names;
+}
+function bestWeightForCanonical(personalRecords, canonical) {
+  let best = null;
+  namesForCanonical(canonical).forEach((n) => {
+    const r = personalRecords[n];
+    if (r?.weight && (best === null || r.weight > best)) best = r.weight;
+  });
+  return best;
+}
+
 const ACHIEVEMENTS = [
   { id: "first_workout", name: "First Rep", description: "Log your first workout.", metric: (ctx) => ({ current: ctx.workoutCount, target: 1 }) },
   { id: "first_pr", name: "New Best", description: "Hit your first personal record.", metric: (ctx) => ({ current: ctx.prCount, target: 1 }) },
   { id: "workout_streak_7", name: "One Week In", description: "Reach a 7-day workout streak.", metric: (ctx) => ({ current: ctx.streaks.workout.longest, target: 7 }) },
   { id: "workout_streak_30", name: "Iron Habit", description: "Reach a 30-day workout streak.", metric: (ctx) => ({ current: ctx.streaks.workout.longest, target: 30 }) },
+  { id: "workout_streak_365", name: "Never Broken", description: "Reach a 365-day workout streak.", metric: (ctx) => ({ current: ctx.streaks.workout.longest, target: 365 }) },
   { id: "protein_streak_7", name: "Dialed In", description: "Hit your protein target 7 days running.", metric: (ctx) => ({ current: ctx.streaks.protein.longest, target: 7 }) },
   { id: "protein_streak_30", name: "Locked In", description: "Hit your protein target 30 days running.", metric: (ctx) => ({ current: ctx.streaks.protein.longest, target: 30 }) },
+  { id: "perfect_nutrition_week", name: "Perfect Week", description: "Hit both your calorie band (±10%) and protein target 7 days running.", metric: (ctx) => ({ current: ctx.perfectNutritionStreak, target: 7 }) },
+  { id: "never_miss_monday", name: "Never Miss Monday", description: "Log a workout on 12 straight Mondays.", metric: (ctx) => ({ current: ctx.mondayStreak.longest, target: 12 }) },
   { id: "pr_collector_5", name: "Record Breaker", description: "Hit 5 personal records.", metric: (ctx) => ({ current: ctx.prCount, target: 5 }) },
   { id: "pr_collector_10", name: "Serial Record Breaker", description: "Hit 10 personal records.", metric: (ctx) => ({ current: ctx.prCount, target: 10 }) },
+  { id: "bench_bodyweight", name: "Bench Bodyweight", description: "Bench press your bodyweight for a rep.", metric: (ctx) => ({ current: ctx.benchWeight ?? 0, target: ctx.bodyweight ?? Infinity }) },
+  { id: "bench_315", name: "Three Plates", description: "Bench press 315 lb.", metric: (ctx) => ({ current: ctx.benchWeight ?? 0, target: 315 }) },
+  { id: "deadlift_405", name: "Four Plates", description: "Deadlift 405 lb.", metric: (ctx) => ({ current: ctx.deadliftWeight ?? 0, target: 405 }) },
+  { id: "million_pounds", name: "One Million Pounds", description: "Lift a cumulative one million pounds.", metric: (ctx) => ({ current: ctx.lifetimeTonnage, target: 1000000 }) },
   { id: "level_5", name: "Level 5", description: "Reach level 5.", metric: (ctx) => ({ current: ctx.xpState.level, target: 5 }) },
   { id: "level_10", name: "Level 10", description: "Reach level 10.", metric: (ctx) => ({ current: ctx.xpState.level, target: 10 }) },
   { id: "fifty_workouts", name: "Half Century", description: "Log 50 total workouts.", metric: (ctx) => ({ current: ctx.workoutCount, target: 50 }) },
@@ -1494,17 +1663,28 @@ const ACHIEVEMENTS = [
 
 // Shared context every ACHIEVEMENTS metric reads from — computed once so
 // every achievement's count stays consistent instead of each one re-deriving
-// its own slightly-different count.
-function buildAchievementContext({ xpState, streaks, prXpEvents }) {
+// its own slightly-different count. Extended in Session 4 with
+// personalRecords/bodyMetrics/workoutLogs/foodLog/goals for the new
+// tonnage/bench/deadlift/Monday/perfect-week achievements.
+function buildAchievementContext({ xpState, streaks, prXpEvents, personalRecords, bodyMetrics, workoutLogs, foodLog, goals }) {
   const workoutCount = xpState.xpHistory.filter((e) => e.source === "workout_completed").length;
   const prCount = (prXpEvents || []).length;
-  return { xpState, streaks, workoutCount, prCount };
+  const today = todayStr();
+  return {
+    xpState, streaks, workoutCount, prCount,
+    benchWeight: bestWeightForCanonical(personalRecords || {}, "Bench Press"),
+    deadliftWeight: bestWeightForCanonical(personalRecords || {}, "Deadlift"),
+    bodyweight: latestBodyweight(bodyMetrics),
+    lifetimeTonnage: computeLifetimeTonnage(workoutLogs),
+    mondayStreak: computeMondayStreak(workoutLogs, today),
+    perfectNutritionStreak: computePerfectNutritionStreak(foodLog, goals, today),
+  };
 }
 
 // Pure and fully derived — safe to call every render. Doesn't know or care
 // about persisted unlock dates, just "is this true right now."
-function computeAchievementProgress({ xpState, streaks, prXpEvents }) {
-  const ctx = buildAchievementContext({ xpState, streaks, prXpEvents });
+function computeAchievementProgress({ xpState, streaks, prXpEvents, personalRecords, bodyMetrics, workoutLogs, foodLog, goals }) {
+  const ctx = buildAchievementContext({ xpState, streaks, prXpEvents, personalRecords, bodyMetrics, workoutLogs, foodLog, goals });
   return ACHIEVEMENTS.map((a) => {
     const { current, target } = a.metric(ctx);
     return { id: a.id, name: a.name, description: a.description, current, target, met: current >= target };
@@ -1553,8 +1733,8 @@ function computeDailyQuests({ workoutLogs, foodLog, dailyVitals, goals, today })
   return DAILY_QUEST_DEFS.filter((q) => q.needsGoal(goals)).map((q) => ({ id: q.id, label: q.label, done: !!doneMap[q.id] }));
 }
 
-function computeLongTermQuests({ xpState, streaks, prXpEvents }) {
-  return computeAchievementProgress({ xpState, streaks, prXpEvents })
+function computeLongTermQuests({ xpState, streaks, prXpEvents, personalRecords, bodyMetrics, workoutLogs, foodLog, goals }) {
+  return computeAchievementProgress({ xpState, streaks, prXpEvents, personalRecords, bodyMetrics, workoutLogs, foodLog, goals })
     .filter((a) => !a.met)
     .sort((a, b) => (b.current / b.target) - (a.current / a.target)) // closest-to-done first
     .map((a) => ({ id: a.id, label: a.name, description: a.description, current: a.current, target: a.target }));
@@ -1827,17 +2007,18 @@ export default function App() {
   useEffect(() => { if (ready) persist("dailyVitals", dailyVitals); }, [dailyVitals, ready, persist]);
   useEffect(() => { if (ready) persist("bodyMetrics", bodyMetrics); }, [bodyMetrics, ready, persist]);
 
-  // Single source of truth for XP — recomputed whenever any source log
-  // changes. See computeXpState comment for why this is safe to fully
-  // recompute rather than incrementally patch.
-  const xpState = useMemo(
-    () => computeXpState({ workoutLogs, foodLog, goals, prEvents: prXpEvents }),
-    [workoutLogs, foodLog, goals, prXpEvents]
-  );
-
   const streaks = useMemo(
     () => computeStreaks({ workoutLogs, foodLog, goals, dailyVitals, activeProgramKey, today: todayStr() }),
     [workoutLogs, foodLog, goals, dailyVitals, activeProgramKey]
+  );
+
+  // Single source of truth for XP — recomputed whenever any source log
+  // changes. See computeXpState comment for why this is safe to fully
+  // recompute rather than incrementally patch. Depends on `streaks` now
+  // (Session 4) since streak-milestone XP events derive from it.
+  const xpState = useMemo(
+    () => computeXpState({ workoutLogs, foodLog, goals, streaks, prEvents: prXpEvents }),
+    [workoutLogs, foodLog, goals, streaks, prXpEvents]
   );
 
   const attributes = useMemo(
@@ -1848,8 +2029,8 @@ export default function App() {
   // Fully derived every render; the effect below is only responsible for
   // noticing when something NEWLY crosses into `met` and recording the date.
   const achievementProgress = useMemo(
-    () => computeAchievementProgress({ xpState, streaks, prXpEvents }),
-    [xpState, streaks, prXpEvents]
+    () => computeAchievementProgress({ xpState, streaks, prXpEvents, personalRecords, bodyMetrics, workoutLogs, foodLog, goals }),
+    [xpState, streaks, prXpEvents, personalRecords, bodyMetrics, workoutLogs, foodLog, goals]
   );
   useEffect(() => {
     if (!ready) return;
@@ -1871,8 +2052,8 @@ export default function App() {
     [workoutLogs, foodLog, dailyVitals, goals]
   );
   const longTermQuests = useMemo(
-    () => computeLongTermQuests({ xpState, streaks, prXpEvents }),
-    [xpState, streaks, prXpEvents]
+    () => computeLongTermQuests({ xpState, streaks, prXpEvents, personalRecords, bodyMetrics, workoutLogs, foodLog, goals }),
+    [xpState, streaks, prXpEvents, personalRecords, bodyMetrics, workoutLogs, foodLog, goals]
   );
 
   // Session 1 (Vision 2.0 — Home Screen Redesign): today's meal totals and
@@ -1946,21 +2127,21 @@ export default function App() {
 
   if (!ready) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">
+      <div className="min-h-screen bg-[#121110] flex items-center justify-center text-[#A79E92]">
         <Loader2 className="animate-spin mr-2" size={20} /> Loading FORGE…
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans pb-24">
+    <div className="min-h-screen bg-[#121110] text-[#EDE7DD] font-sans pb-24">
       <Header />
       {storageError && (
         <div className="max-w-2xl mx-auto px-4 pt-3">
-          <div className="bg-red-950/60 border border-red-900 text-red-300 rounded-xl px-3.5 py-2.5 text-sm font-medium flex items-start gap-2">
+          <div className="bg-[#2A1512]/60 border border-[#4A241C] text-[#DFA495] rounded-xl px-3.5 py-2.5 text-sm font-medium flex items-start gap-2">
             <Info size={15} className="shrink-0 mt-0.5" />
             <span className="flex-1">Not saved: {storageError}</span>
-            <button onClick={() => setStorageError(null)} className="shrink-0 text-red-400 hover:text-red-200">
+            <button onClick={() => setStorageError(null)} className="shrink-0 text-[#D37E68] hover:text-[#ECC5BA]">
               <X size={15} />
             </button>
           </div>
@@ -1968,13 +2149,13 @@ export default function App() {
       )}
       {justUnlockedAchievement && (
         <div className="max-w-2xl mx-auto px-4 pt-3">
-          <div className="bg-amber-950/50 border border-amber-800/50 text-amber-200 rounded-xl px-3.5 py-2.5 text-sm font-medium flex items-start gap-2">
-            <Trophy size={15} className="shrink-0 mt-0.5 text-amber-400" />
+          <div className="bg-[#241C08]/50 border border-[#7A611C]/50 text-[#EEE0B0] rounded-xl px-3.5 py-2.5 text-sm font-medium flex items-start gap-2">
+            <Trophy size={15} className="shrink-0 mt-0.5 text-[#D8B94A]" />
             <span className="flex-1">
               Achievement unlocked — {justUnlockedAchievement.name}
-              <span className="block text-amber-400/80 font-normal text-xs mt-0.5">{justUnlockedAchievement.description}</span>
+              <span className="block text-[#D8B94A]/80 font-normal text-xs mt-0.5">{justUnlockedAchievement.description}</span>
             </span>
-            <button onClick={() => setJustUnlockedAchievement(null)} className="shrink-0 text-amber-500 hover:text-amber-300">
+            <button onClick={() => setJustUnlockedAchievement(null)} className="shrink-0 text-[#C9A227] hover:text-[#E6D089]">
               <X size={15} />
             </button>
           </div>
@@ -1982,7 +2163,7 @@ export default function App() {
       )}
       {banner && (
         <div className="max-w-2xl mx-auto px-4 pt-3">
-          <div className="bg-orange-600 text-zinc-950 rounded-xl px-3.5 py-2.5 text-sm font-medium flex items-center gap-2">
+          <div className="bg-[#C9A227] text-[#121110] rounded-xl px-3.5 py-2.5 text-sm font-medium flex items-center gap-2">
             <Bell size={15} /> {banner}
           </div>
         </div>
@@ -2076,12 +2257,14 @@ export default function App() {
 
 function Header() {
   return (
-    <header className="border-b border-zinc-800 bg-zinc-950/95 backdrop-blur sticky top-0 z-10">
-      <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2">
-        <div className="w-8 h-8 rounded bg-orange-600 flex items-center justify-center font-black text-zinc-950 text-sm">F</div>
+    <header className="border-b border-[#241F1B] bg-[#121110]/95 backdrop-blur sticky top-0 z-10">
+      <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#D8B94A] to-[#9C7D1E] flex items-center justify-center font-black text-[#121110] text-base shadow-[0_1px_0_rgba(255,255,255,0.25)_inset,0_2px_6px_rgba(0,0,0,0.5)] ring-1 ring-[#3A2E0C]">
+          F
+        </div>
         <div>
-          <div className="font-black tracking-tight text-lg leading-none">FORGE</div>
-          <div className="text-[11px] text-zinc-500 leading-none mt-0.5">nutrition · training log</div>
+          <div className="font-black tracking-tight text-lg leading-none text-[#EDE7DD]">FORGE</div>
+          <div className="text-[11px] text-[#8C8378] leading-none mt-1 tracking-wide">nutrition · training log</div>
         </div>
       </div>
     </header>
@@ -2101,17 +2284,20 @@ function NavBar({ tab, setTab }) {
     { key: "reminders", label: "Remind", icon: Bell },
   ];
   return (
-    <nav className="fixed bottom-0 inset-x-0 bg-zinc-900 border-t border-zinc-800 z-10">
+    <nav className="fixed bottom-0 inset-x-0 bg-[#1B1917]/97 backdrop-blur border-t border-[#241F1B] z-10 shadow-[0_-4px_16px_rgba(0,0,0,0.35)]">
       <div className="max-w-2xl mx-auto flex overflow-x-auto no-scrollbar">
         {items.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`flex-1 min-w-[64px] shrink-0 flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors ${
-              tab === key ? "text-orange-500" : "text-zinc-500"
+            className={`relative flex-1 min-w-[64px] shrink-0 flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors ${
+              tab === key ? "text-[#D8B94A]" : "text-[#8C8378]"
             }`}
           >
-            <span className={`flex items-center justify-center w-9 h-7 rounded-full transition-colors ${tab === key ? "bg-orange-500/15" : ""}`}>
+            {tab === key && (
+              <span className="absolute top-0 inset-x-3 h-[2px] rounded-full bg-gradient-to-r from-transparent via-[#D8B94A] to-transparent" />
+            )}
+            <span className={`flex items-center justify-center w-9 h-7 rounded-full transition-colors ${tab === key ? "bg-[#C9A227]/15" : ""}`}>
               <Icon size={18} />
             </span>
             {label}
@@ -2137,20 +2323,38 @@ function XpBar({ xpState }) {
   const ceiling = xpForLevel(xpState.level + 1);
   const span = ceiling - floor || 1;
   const pct = clamp(((xpState.totalXp - floor) / span) * 100, 0, 100);
+  const categoryMeta = [
+    { key: "strength", label: "Strength", color: "text-[#D37E68]" },
+    { key: "nutrition", label: "Nutrition", color: "text-[#8FA66B]" },
+    { key: "recovery", label: "Recovery", color: "text-[#7FA8C9]" },
+    { key: "discipline", label: "Discipline", color: "text-[#9C87A8]" },
+    { key: "consistency", label: "Consistency", color: "text-[#D8B94A]" },
+  ];
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+    <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-4">
       <div className="flex items-end justify-between mb-2">
         <div>
-          <div className="text-xs text-zinc-500 uppercase tracking-wide">Level</div>
-          <div className="text-3xl font-bold text-orange-500">{xpState.level}</div>
+          <div className="text-xs text-[#8C8378] uppercase tracking-wide">Level</div>
+          <div className="text-3xl font-bold text-[#C9A227]">{xpState.level}</div>
         </div>
-        <div className="text-right text-xs text-zinc-500">
+        <div className="text-right text-xs text-[#8C8378]">
           {xpState.totalXp} XP total<br />
           {ceiling - xpState.totalXp} to level {xpState.level + 1}
         </div>
       </div>
-      <div className="w-full bg-zinc-950 rounded-full h-2 overflow-hidden">
-        <div className="h-full bg-orange-500" style={{ width: `${pct}%` }} />
+      <div className="w-full bg-[#121110] rounded-full h-2 overflow-hidden">
+        <div className="h-full bg-[#C9A227]" style={{ width: `${pct}%` }} />
+      </div>
+      <div className="grid grid-cols-5 gap-1.5 mt-3">
+        {categoryMeta.map((c) => {
+          const val = xpState.categoryXp?.[c.key];
+          return (
+            <div key={c.key} className="text-center">
+              <div className={`text-xs font-bold ${val == null ? "text-[#3A342C]" : c.color}`}>{val == null ? "—" : val}</div>
+              <div className="text-[9px] text-[#4A4238] uppercase tracking-wide">{c.label}</div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -2158,11 +2362,11 @@ function XpBar({ xpState }) {
 
 function StreakBadge({ label, icon: Icon, streak, color }) {
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex-1 text-center">
+    <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3 flex-1 text-center">
       <Icon size={16} className={`mx-auto mb-1 ${color}`} />
-      <div className="text-lg font-bold text-zinc-100">{streak.current}</div>
-      <div className="text-[10px] text-zinc-500 uppercase tracking-wide">{label}</div>
-      {streak.longest > streak.current && <div className="text-[10px] text-zinc-600 mt-0.5">best {streak.longest}</div>}
+      <div className="text-lg font-bold text-[#EDE7DD]">{streak.current}</div>
+      <div className="text-[10px] text-[#8C8378] uppercase tracking-wide">{label}</div>
+      {streak.longest > streak.current && <div className="text-[10px] text-[#4A4238] mt-0.5">best {streak.longest}</div>}
     </div>
   );
 }
@@ -2171,11 +2375,11 @@ function AttributeBar({ label, value }) {
   return (
     <div>
       <div className="flex items-center justify-between text-xs mb-1">
-        <span className="text-zinc-400">{label}</span>
-        <span className="text-zinc-500">{value == null ? "—" : value}</span>
+        <span className="text-[#A79E92]">{label}</span>
+        <span className="text-[#8C8378]">{value == null ? "—" : value}</span>
       </div>
-      <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden">
-        <div className="h-full bg-orange-600" style={{ width: `${value == null ? 0 : clamp(value, 0, 100)}%` }} />
+      <div className="w-full bg-[#121110] rounded-full h-1.5 overflow-hidden">
+        <div className="h-full bg-[#C9A227]" style={{ width: `${value == null ? 0 : clamp(value, 0, 100)}%` }} />
       </div>
     </div>
   );
@@ -2205,25 +2409,25 @@ function HomeTab({ xpState, streaks, attributes, dailyQuests, longTermQuests, re
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide">The Forge</h2>
-        <p className="text-lg font-semibold text-zinc-100 mt-0.5">{homeGreeting()}.</p>
+        <h2 className="text-sm font-semibold text-[#A79E92] uppercase tracking-wide">The Forge</h2>
+        <p className="text-lg font-semibold text-[#EDE7DD] mt-0.5">{homeGreeting()}.</p>
       </div>
 
       {todaySchedule.isRest ? (
         <button
           onClick={() => setTab("train")}
-          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-3 hover:border-zinc-700"
+          className="w-full bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-4 flex items-center gap-3 hover:border-[#3A342C]"
         >
-          <Moon size={20} className="text-sky-400 shrink-0" />
+          <Moon size={20} className="text-[#7FA8C9] shrink-0" />
           <div className="text-left">
-            <div className="text-sm font-semibold text-zinc-200">Rest day</div>
-            <div className="text-xs text-zinc-500">No session scheduled today — tap to log anyway</div>
+            <div className="text-sm font-semibold text-[#DDD5C8]">Rest day</div>
+            <div className="text-xs text-[#8C8378]">No session scheduled today — tap to log anyway</div>
           </div>
         </button>
       ) : (
         <button
           onClick={() => setTab("train")}
-          className="w-full bg-orange-600 hover:bg-orange-500 text-zinc-950 rounded-xl p-4 flex items-center gap-3 shadow-lg shadow-orange-950/30"
+          className="w-full bg-[#C9A227] hover:bg-[#C9A227] text-[#121110] rounded-xl p-4 flex items-center gap-3 shadow-lg shadow-[#241C08]/30"
         >
           <Play size={20} className="shrink-0" fill="currentColor" />
           <div className="text-left">
@@ -2234,29 +2438,29 @@ function HomeTab({ xpState, streaks, attributes, dailyQuests, longTermQuests, re
       )}
 
       <div className="grid grid-cols-2 gap-2">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
-          <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">Calories left</div>
-          <div className="text-lg font-semibold text-zinc-100 mt-0.5">
+        <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3">
+          <div className="text-[11px] font-semibold text-[#8C8378] uppercase tracking-wide">Calories left</div>
+          <div className="text-lg font-semibold text-[#EDE7DD] mt-0.5">
             {caloriesRemaining === null ? "—" : caloriesRemaining}
           </div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
-          <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">Protein left</div>
-          <div className="text-lg font-semibold text-zinc-100 mt-0.5">
+        <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3">
+          <div className="text-[11px] font-semibold text-[#8C8378] uppercase tracking-wide">Protein left</div>
+          <div className="text-lg font-semibold text-[#EDE7DD] mt-0.5">
             {proteinRemaining === null ? "—" : `${proteinRemaining}g`}
           </div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
-          <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide flex items-center gap-1">
+        <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3">
+          <div className="text-[11px] font-semibold text-[#8C8378] uppercase tracking-wide flex items-center gap-1">
             <HeartPulse size={11} /> Recovery
           </div>
-          <div className="text-lg font-semibold text-zinc-100 mt-0.5">
+          <div className="text-lg font-semibold text-[#EDE7DD] mt-0.5">
             {attributes.recovery == null ? "—" : Math.round(attributes.recovery)}
           </div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
-          <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">This week</div>
-          <div className="text-lg font-semibold text-zinc-100 mt-0.5">
+        <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3">
+          <div className="text-[11px] font-semibold text-[#8C8378] uppercase tracking-wide">This week</div>
+          <div className="text-lg font-semibold text-[#EDE7DD] mt-0.5">
             {weekConsistency ? `${weekConsistency.hit}/${weekConsistency.scheduled}` : "—"}
           </div>
         </div>
@@ -2265,13 +2469,13 @@ function HomeTab({ xpState, streaks, attributes, dailyQuests, longTermQuests, re
       <XpBar xpState={xpState} />
 
       <div className="flex gap-2">
-        <StreakBadge label="Workout" icon={Dumbbell} streak={streaks.workout} color="text-orange-400" />
-        <StreakBadge label="Protein" icon={Flame} streak={streaks.protein} color="text-emerald-400" />
-        <StreakBadge label="Water" icon={Flame} streak={streaks.water} color="text-sky-400" />
+        <StreakBadge label="Workout" icon={Dumbbell} streak={streaks.workout} color="text-[#D8B94A]" />
+        <StreakBadge label="Protein" icon={Flame} streak={streaks.protein} color="text-[#8FA66B]" />
+        <StreakBadge label="Water" icon={Flame} streak={streaks.water} color="text-[#7FA8C9]" />
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
-        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Attributes</label>
+      <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-4 space-y-3">
+        <label className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide">Attributes</label>
         <AttributeBar label="Strength" value={attributes.strength} />
         <AttributeBar label="Discipline" value={attributes.discipline} />
         <AttributeBar label="Nutrition" value={attributes.nutrition} />
@@ -2280,28 +2484,28 @@ function HomeTab({ xpState, streaks, attributes, dailyQuests, longTermQuests, re
       </div>
 
       {dailyQuests.length > 0 && (
-        <button onClick={() => setTab("today")} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-left hover:border-orange-600/40">
+        <button onClick={() => setTab("today")} className="w-full bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3 text-left hover:border-[#C9A227]/40">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Today's quests</label>
-            <span className="text-xs text-zinc-500">{dailyDone}/{dailyQuests.length}</span>
+            <label className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide">Today's quests</label>
+            <span className="text-xs text-[#8C8378]">{dailyDone}/{dailyQuests.length}</span>
           </div>
-          <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden mt-2">
-            <div className="h-full bg-emerald-600" style={{ width: `${dailyQuests.length ? (dailyDone / dailyQuests.length) * 100 : 0}%` }} />
+          <div className="w-full bg-[#121110] rounded-full h-1.5 overflow-hidden mt-2">
+            <div className="h-full bg-[#5C7A3E]" style={{ width: `${dailyQuests.length ? (dailyDone / dailyQuests.length) * 100 : 0}%` }} />
           </div>
         </button>
       )}
 
       {longTermQuests.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-3">
-          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Next up</label>
+        <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3 space-y-3">
+          <label className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide">Next up</label>
           {longTermQuests.slice(0, 3).map((q) => (
             <div key={q.id}>
               <div className="flex items-center justify-between text-sm mb-1">
-                <span className="text-zinc-300">{q.label}</span>
-                <span className="text-xs text-zinc-500">{q.current} / {q.target}</span>
+                <span className="text-[#C7BFB2]">{q.label}</span>
+                <span className="text-xs text-[#8C8378]">{q.current} / {q.target}</span>
               </div>
-              <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden">
-                <div className="h-full bg-orange-600" style={{ width: `${clamp((q.current / q.target) * 100, 0, 100)}%` }} />
+              <div className="w-full bg-[#121110] rounded-full h-1.5 overflow-hidden">
+                <div className="h-full bg-[#C9A227]" style={{ width: `${clamp((q.current / q.target) * 100, 0, 100)}%` }} />
               </div>
             </div>
           ))}
@@ -2309,14 +2513,14 @@ function HomeTab({ xpState, streaks, attributes, dailyQuests, longTermQuests, re
       )}
 
       {recentUnlocks.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-2">
-          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide flex items-center gap-1.5">
-            <Trophy size={13} className="text-amber-400" /> Recent achievements
+        <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3 space-y-2">
+          <label className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide flex items-center gap-1.5">
+            <Trophy size={13} className="text-[#D8B94A]" /> Recent achievements
           </label>
           {recentUnlocks.map((a) => (
             <div key={a.id} className="flex items-center justify-between text-sm">
-              <span className="text-zinc-300">{a.name}</span>
-              <span className="text-xs text-zinc-600">{a.date}</span>
+              <span className="text-[#C7BFB2]">{a.name}</span>
+              <span className="text-xs text-[#4A4238]">{a.date}</span>
             </div>
           ))}
         </div>
@@ -2326,10 +2530,10 @@ function HomeTab({ xpState, streaks, attributes, dailyQuests, longTermQuests, re
 }
 
 
-function Sparkline({ points, color = "#f97316", height = 80 }) {
+function Sparkline({ points, color = "#C9A227", height = 80 }) {
   const clean = (points || []).filter((p) => p.value != null);
   if (clean.length < 2) {
-    return <div className="h-20 flex items-center justify-center text-xs text-zinc-600">Need at least 2 entries to chart a trend</div>;
+    return <div className="h-20 flex items-center justify-center text-xs text-[#4A4238]">Need at least 2 entries to chart a trend</div>;
   }
   const values = clean.map((p) => p.value);
   const min = Math.min(...values), max = Math.max(...values);
@@ -2345,7 +2549,7 @@ function Sparkline({ points, color = "#f97316", height = 80 }) {
       <svg viewBox={`0 0 ${w} ${height}`} className="w-full" style={{ height }}>
         <polyline points={coords.join(" ")} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
       </svg>
-      <div className="flex justify-between text-[10px] text-zinc-600 mt-1">
+      <div className="flex justify-between text-[10px] text-[#4A4238] mt-1">
         <span>{clean[0].date}</span>
         <span>{clean[clean.length - 1].date}</span>
       </div>
@@ -2373,70 +2577,70 @@ function ProgressTab({ bodyMetrics, setBodyMetrics, bodyMetricsTrend, prXpEvents
 
   return (
     <div className="space-y-4">
-      <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide">Progress</h2>
+      <h2 className="text-sm font-semibold text-[#A79E92] uppercase tracking-wide">Progress</h2>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
-        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Bodyweight trend</label>
-        <Sparkline points={bodyMetricsTrend.map((m) => ({ date: m.date, value: m.weightLbs }))} color="#f97316" />
+      <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-4 space-y-3">
+        <label className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide">Bodyweight trend</label>
+        <Sparkline points={bodyMetricsTrend.map((m) => ({ date: m.date, value: m.weightLbs }))} color="#C9A227" />
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
-        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Body fat % trend</label>
-        <Sparkline points={bodyMetricsTrend.map((m) => ({ date: m.date, value: m.bfPercent }))} color="#38bdf8" />
+      <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-4 space-y-3">
+        <label className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide">Body fat % trend</label>
+        <Sparkline points={bodyMetricsTrend.map((m) => ({ date: m.date, value: m.bfPercent }))} color="#6C93A6" />
       </div>
 
       {exercisesWithHistory.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+        <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Strength trend (e1RM)</label>
-            <select value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs">
+            <label className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide">Strength trend (e1RM)</label>
+            <select value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)} className="bg-[#121110] border border-[#241F1B] rounded px-2 py-1 text-xs">
               {exercisesWithHistory.map((ex) => <option key={ex} value={ex}>{ex}</option>)}
             </select>
           </div>
-          <Sparkline points={strengthHistory.map((h) => ({ date: h.date, value: h.e1rm }))} color="#22c55e" />
+          <Sparkline points={strengthHistory.map((h) => ({ date: h.date, value: h.e1rm }))} color="#8FA66B" />
         </div>
       )}
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
-        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Log today's numbers</label>
-        {todayEntry && <p className="text-[11px] text-zinc-500">Already logged today via {todayEntry.bfMethod || "—"} — saving again overwrites it.</p>}
+      <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-4 space-y-3">
+        <label className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide">Log today's numbers</label>
+        {todayEntry && <p className="text-[11px] text-[#8C8378]">Already logged today via {todayEntry.bfMethod || "—"} — saving again overwrites it.</p>}
         <div>
-          <label className="text-[10px] text-zinc-600">Bodyweight (lbs)</label>
-          <input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={form.weightLbs} onChange={(e) => setField("weightLbs", e.target.value)} />
+          <label className="text-[10px] text-[#4A4238]">Bodyweight (lbs)</label>
+          <input type="number" className="w-full bg-[#121110] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={form.weightLbs} onChange={(e) => setField("weightLbs", e.target.value)} />
         </div>
 
         <div className="flex gap-2 text-xs">
-          <button onClick={() => setMode("manual")} className={`flex-1 rounded-lg py-1.5 border ${mode === "manual" ? "border-orange-600 text-orange-400" : "border-zinc-800 text-zinc-500"}`}>Enter BF% directly</button>
-          <button onClick={() => setMode("calculated")} className={`flex-1 rounded-lg py-1.5 border ${mode === "calculated" ? "border-orange-600 text-orange-400" : "border-zinc-800 text-zinc-500"}`}>Calculate from measurements</button>
+          <button onClick={() => setMode("manual")} className={`flex-1 rounded-lg py-1.5 border ${mode === "manual" ? "border-[#C9A227] text-[#D8B94A]" : "border-[#241F1B] text-[#8C8378]"}`}>Enter BF% directly</button>
+          <button onClick={() => setMode("calculated")} className={`flex-1 rounded-lg py-1.5 border ${mode === "calculated" ? "border-[#C9A227] text-[#D8B94A]" : "border-[#241F1B] text-[#8C8378]"}`}>Calculate from measurements</button>
         </div>
 
         {mode === "manual" ? (
           <div>
-            <label className="text-[10px] text-zinc-600">Body fat % (from calipers, DEXA, a coach, etc.)</label>
-            <input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={form.manualBf} onChange={(e) => setField("manualBf", e.target.value)} />
+            <label className="text-[10px] text-[#4A4238]">Body fat % (from calipers, DEXA, a coach, etc.)</label>
+            <input type="number" className="w-full bg-[#121110] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={form.manualBf} onChange={(e) => setField("manualBf", e.target.value)} />
           </div>
         ) : (
           <div className="space-y-2">
             <div className="flex gap-2 text-xs">
-              <button onClick={() => setSex("male")} className={`flex-1 rounded-lg py-1 border ${sex === "male" ? "border-orange-600 text-orange-400" : "border-zinc-800 text-zinc-500"}`}>Male</button>
-              <button onClick={() => setSex("female")} className={`flex-1 rounded-lg py-1 border ${sex === "female" ? "border-orange-600 text-orange-400" : "border-zinc-800 text-zinc-500"}`}>Female</button>
+              <button onClick={() => setSex("male")} className={`flex-1 rounded-lg py-1 border ${sex === "male" ? "border-[#C9A227] text-[#D8B94A]" : "border-[#241F1B] text-[#8C8378]"}`}>Male</button>
+              <button onClick={() => setSex("female")} className={`flex-1 rounded-lg py-1 border ${sex === "female" ? "border-[#C9A227] text-[#D8B94A]" : "border-[#241F1B] text-[#8C8378]"}`}>Female</button>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <div><label className="text-[10px] text-zinc-600">Neck (in)</label><input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={form.neck} onChange={(e) => setField("neck", e.target.value)} /></div>
-              <div><label className="text-[10px] text-zinc-600">Waist (in)</label><input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={form.waist} onChange={(e) => setField("waist", e.target.value)} /></div>
-              <div><label className="text-[10px] text-zinc-600">Height (in)</label><input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={form.height} onChange={(e) => setField("height", e.target.value)} /></div>
+              <div><label className="text-[10px] text-[#4A4238]">Neck (in)</label><input type="number" className="w-full bg-[#121110] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={form.neck} onChange={(e) => setField("neck", e.target.value)} /></div>
+              <div><label className="text-[10px] text-[#4A4238]">Waist (in)</label><input type="number" className="w-full bg-[#121110] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={form.waist} onChange={(e) => setField("waist", e.target.value)} /></div>
+              <div><label className="text-[10px] text-[#4A4238]">Height (in)</label><input type="number" className="w-full bg-[#121110] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={form.height} onChange={(e) => setField("height", e.target.value)} /></div>
               {sex === "female" && (
-                <div><label className="text-[10px] text-zinc-600">Hip (in)</label><input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={form.hip} onChange={(e) => setField("hip", e.target.value)} /></div>
+                <div><label className="text-[10px] text-[#4A4238]">Hip (in)</label><input type="number" className="w-full bg-[#121110] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={form.hip} onChange={(e) => setField("hip", e.target.value)} /></div>
               )}
             </div>
-            <p className="text-[11px] text-zinc-500">
+            <p className="text-[11px] text-[#8C8378]">
               {previewBf != null ? `≈ ${previewBf.toFixed(1)}% — Navy/USMC circumference method.` : "Enter all measurements to preview."}
               {" "}Tape-measurement estimate — trend it over time rather than treating any single reading as exact; calipers or a DEXA scan will be more precise at any one point.
             </p>
           </div>
         )}
 
-        <button onClick={saveEntry} className="w-full bg-orange-600 text-zinc-950 font-semibold rounded-lg py-2.5 text-sm">
+        <button onClick={saveEntry} className="w-full bg-[#C9A227] text-[#121110] font-semibold transition active:scale-[0.98] active:brightness-90 rounded-lg py-2.5 text-sm">
           Save today's entry
         </button>
       </div>
@@ -2513,11 +2717,11 @@ function TodayTab({ meals, log, setLog, activeProgramKey, setActiveProgramKey, d
 
   return (
     <div className="space-y-4">
-      <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide">
+      <h2 className="text-sm font-semibold text-[#A79E92] uppercase tracking-wide">
         {new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}
       </h2>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4">
+      <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-4 flex items-center gap-4">
         <CalorieRing value={totals.cals} target={totals.planned} size={112} stroke={10} />
         <div className="flex-1 min-w-0 space-y-2">
           <MacroBar label="Protein" color={MACRO_COLORS.protein} val={totals.protein} tgt={Math.round(totals.protPlanned)} />
@@ -2526,42 +2730,42 @@ function TodayTab({ meals, log, setLog, activeProgramKey, setActiveProgramKey, d
         </div>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
-        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide flex items-center gap-1.5">
+      <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3">
+        <label className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide flex items-center gap-1.5">
           <Dumbbell size={13} /> Training program
         </label>
         <select
           value={activeProgramKey}
           onChange={(e) => setActiveProgramKey(e.target.value)}
-          className="w-full mt-1.5 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
+          className="w-full mt-1.5 bg-[#121110] border border-[#241F1B] rounded-lg px-3 py-2 text-sm"
         >
           {Object.entries(PROGRAMS).map(([key, p]) => (
             <option key={key} value={key}>{p.label}</option>
           ))}
         </select>
-        <p className="text-xs text-zinc-500 mt-1.5">{program.style}</p>
-        <p className="text-[11px] text-zinc-600 mt-2">Full set logging is in the Train tab — this stays in sync with whatever you pick here.</p>
+        <p className="text-xs text-[#8C8378] mt-1.5">{program.style}</p>
+        <p className="text-[11px] text-[#4A4238] mt-2">Full set logging is in the Train tab — this stays in sync with whatever you pick here.</p>
       </div>
 
       {(waterTarget > 0 || stepsTarget > 0) && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-3">
-          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide flex items-center gap-1.5">
+        <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3 space-y-3">
+          <label className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide flex items-center gap-1.5">
             <Flame size={13} /> Vitals
           </label>
           {waterTarget > 0 && (
             <div>
               <div className="flex items-center justify-between text-sm mb-1">
-                <span className="text-zinc-300">Water</span>
-                <span className={`text-xs ${todayVitals.waterOz >= waterTarget ? "text-emerald-400" : "text-zinc-500"}`}>
+                <span className="text-[#C7BFB2]">Water</span>
+                <span className={`text-xs ${todayVitals.waterOz >= waterTarget ? "text-[#8FA66B]" : "text-[#8C8378]"}`}>
                   {Math.round(todayVitals.waterOz)} / {waterTarget} oz
                 </span>
               </div>
-              <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden mb-2">
-                <div className="h-full bg-sky-500" style={{ width: `${clamp((todayVitals.waterOz / waterTarget) * 100, 0, 100)}%` }} />
+              <div className="w-full bg-[#121110] rounded-full h-1.5 overflow-hidden mb-2">
+                <div className="h-full bg-[#4C7FA3]" style={{ width: `${clamp((todayVitals.waterOz / waterTarget) * 100, 0, 100)}%` }} />
               </div>
               <div className="flex gap-2">
                 {[8, 16, 24].map((oz) => (
-                  <button key={oz} onClick={() => addWater(oz)} className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg py-1.5 text-xs text-zinc-300 hover:border-sky-600/60">
+                  <button key={oz} onClick={() => addWater(oz)} className="flex-1 bg-[#121110] border border-[#241F1B] rounded-lg py-1.5 text-xs text-[#C7BFB2] hover:border-[#3E6473]/60">
                     +{oz}oz
                   </button>
                 ))}
@@ -2571,14 +2775,14 @@ function TodayTab({ meals, log, setLog, activeProgramKey, setActiveProgramKey, d
           {stepsTarget > 0 && (
             <div>
               <div className="flex items-center justify-between text-sm mb-1">
-                <span className="text-zinc-300">Steps</span>
-                <span className={`text-xs ${todayVitals.steps >= stepsTarget ? "text-emerald-400" : "text-zinc-500"}`}>
+                <span className="text-[#C7BFB2]">Steps</span>
+                <span className={`text-xs ${todayVitals.steps >= stepsTarget ? "text-[#8FA66B]" : "text-[#8C8378]"}`}>
                   {todayVitals.steps} / {stepsTarget}
                 </span>
               </div>
               <input
                 type="number"
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-sm"
+                className="w-full bg-[#121110] border border-[#241F1B] rounded-lg px-3 py-1.5 text-sm"
                 placeholder="Today's step count"
                 value={todayVitals.steps || ""}
                 onChange={(e) => setSteps(e.target.value)}
@@ -2589,30 +2793,30 @@ function TodayTab({ meals, log, setLog, activeProgramKey, setActiveProgramKey, d
       )}
 
       {dailyQuests?.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-2">
-          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Today's quests</label>
+        <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3 space-y-2">
+          <label className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide">Today's quests</label>
           {dailyQuests.map((q) => (
             <div key={q.id} className="flex items-center gap-2 text-sm">
-              <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 ${q.done ? "bg-emerald-600" : "bg-zinc-800 border border-zinc-700"}`}>
-                {q.done && <Check size={11} className="text-zinc-950" />}
+              <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 ${q.done ? "bg-[#5C7A3E]" : "bg-[#241F1B] border border-[#3A342C]"}`}>
+                {q.done && <Check size={11} className="text-[#121110]" />}
               </div>
-              <span className={q.done ? "text-zinc-500 line-through" : "text-zinc-300"}>{q.label}</span>
+              <span className={q.done ? "text-[#8C8378] line-through" : "text-[#C7BFB2]"}>{q.label}</span>
             </div>
           ))}
         </div>
       )}
 
       {longTermQuests?.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-3">
-          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Long-term quests</label>
+        <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3 space-y-3">
+          <label className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide">Long-term quests</label>
           {longTermQuests.slice(0, 3).map((q) => (
             <div key={q.id}>
               <div className="flex items-center justify-between text-sm mb-1">
-                <span className="text-zinc-300">{q.label}</span>
-                <span className="text-xs text-zinc-500">{q.current} / {q.target}</span>
+                <span className="text-[#C7BFB2]">{q.label}</span>
+                <span className="text-xs text-[#8C8378]">{q.current} / {q.target}</span>
               </div>
-              <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden">
-                <div className="h-full bg-orange-600" style={{ width: `${clamp((q.current / q.target) * 100, 0, 100)}%` }} />
+              <div className="w-full bg-[#121110] rounded-full h-1.5 overflow-hidden">
+                <div className="h-full bg-[#C9A227]" style={{ width: `${clamp((q.current / q.target) * 100, 0, 100)}%` }} />
               </div>
             </div>
           ))}
@@ -2642,9 +2846,9 @@ function TodayTab({ meals, log, setLog, activeProgramKey, setActiveProgramKey, d
       </div>
 
       <div className="pt-2">
-        <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Add from your prep library</h3>
+        <h3 className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide mb-2">Add from your prep library</h3>
         {meals.length === 0 ? (
-          <p className="text-sm text-zinc-500">No meals saved yet — build some in the Prep tab first.</p>
+          <p className="text-sm text-[#8C8378]">No meals saved yet — build some in the Prep tab first.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {meals
@@ -2653,10 +2857,10 @@ function TodayTab({ meals, log, setLog, activeProgramKey, setActiveProgramKey, d
                 <button
                   key={m.id}
                   onClick={() => addToPlan(m.id)}
-                  className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-full pl-3 pr-2 py-1.5 text-sm text-zinc-300 hover:border-orange-600/60"
+                  className="flex items-center gap-1.5 bg-[#1B1917] border border-[#241F1B] rounded-full pl-3 pr-2 py-1.5 text-sm text-[#C7BFB2] hover:border-[#C9A227]/60"
                 >
-                  {m.name} <span className="text-zinc-500 text-xs">{m.calories}kcal</span>
-                  <Plus size={14} className="text-orange-500" />
+                  {m.name} <span className="text-[#8C8378] text-xs">{m.calories}kcal</span>
+                  <Plus size={14} className="text-[#C9A227]" />
                 </button>
               ))}
           </div>
@@ -2674,45 +2878,45 @@ function MealRow({ meal, entry, onDone, onUnmark, onOverride, onRemove }) {
   const status = entry?.status;
 
   return (
-    <div className={`rounded-xl border p-3 ${status === "done" ? "border-teal-700/60 bg-teal-950/20" : status === "replaced" ? "border-orange-700/60 bg-orange-950/10" : "border-zinc-800 bg-zinc-900"}`}>
+    <div className={`rounded-xl border p-3 ${status === "done" ? "border-[#3E6473]/60 bg-[#16242A]/20" : status === "replaced" ? "border-[#9C7D1E]/60 bg-[#241C08]/10" : "border-[#241F1B] bg-[#1B1917]"}`}>
       <div className="flex items-center gap-3">
         <button
           onClick={() => (status === "done" ? onUnmark() : onDone())}
           className={`w-8 h-8 shrink-0 rounded-full flex items-center justify-center border-2 transition-colors ${
-            status === "done" ? "bg-teal-600 border-teal-600" : "border-zinc-600"
+            status === "done" ? "bg-[#4C7F91] border-[#4C7F91]" : "border-[#4A4238]"
           }`}
         >
-          {status === "done" && <Check size={16} className="text-zinc-950" />}
+          {status === "done" && <Check size={16} className="text-[#121110]" />}
         </button>
         <div className="flex-1 min-w-0">
           <div className="font-medium text-sm truncate">{meal.name}</div>
           {status === "replaced" ? (
-            <div className="text-xs text-orange-400">Replaced: {entry.food} · {entry.calories} kcal</div>
+            <div className="text-xs text-[#D8B94A]">Replaced: {entry.food} · {entry.calories} kcal</div>
           ) : (
-            <div className="text-xs text-zinc-500 flex items-center gap-1.5">
+            <div className="text-xs text-[#8C8378] flex items-center gap-1.5">
               <span>{meal.calories} kcal</span>
-              {meal.protein ? <><span className="text-zinc-700">·</span><MacroInline protein={meal.protein} carbs={meal.carbs} fat={meal.fat} /></> : null}
+              {meal.protein ? <><span className="text-[#3A342C]">·</span><MacroInline protein={meal.protein} carbs={meal.carbs} fat={meal.fat} /></> : null}
             </div>
           )}
         </div>
-        <button onClick={() => setShowOverride((s) => !s)} className="text-xs text-zinc-500 px-2 py-1 hover:text-orange-500">
+        <button onClick={() => setShowOverride((s) => !s)} className="text-xs text-[#8C8378] px-2 py-1 hover:text-[#C9A227]">
           {status === "replaced" ? "Edit" : "Swap"}
         </button>
-        <button onClick={onRemove} className="text-zinc-600 hover:text-red-500">
+        <button onClick={onRemove} className="text-[#4A4238] hover:text-[#C4593F]">
           <Trash2 size={15} />
         </button>
       </div>
       {showOverride && (
-        <div className="mt-3 pt-3 border-t border-zinc-800 flex gap-2">
+        <div className="mt-3 pt-3 border-t border-[#241F1B] flex gap-2">
           <input
-            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-sm"
+            className="flex-1 bg-[#121110] border border-[#241F1B] rounded-lg px-2 py-1.5 text-sm"
             placeholder="What did you actually eat?"
             value={food}
             onChange={(e) => setFood(e.target.value)}
           />
           <input
             type="number"
-            className="w-24 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-sm"
+            className="w-24 bg-[#121110] border border-[#241F1B] rounded-lg px-2 py-1.5 text-sm"
             placeholder="kcal"
             value={cals}
             onChange={(e) => setCals(e.target.value)}
@@ -2724,7 +2928,7 @@ function MealRow({ meal, entry, onDone, onUnmark, onOverride, onRemove }) {
               setShowOverride(false);
               setFood(""); setCals("");
             }}
-            className="bg-orange-600 text-zinc-950 font-semibold rounded-lg px-3 text-sm"
+            className="bg-[#C9A227] text-[#121110] font-semibold transition active:scale-[0.98] active:brightness-90 rounded-lg px-3 text-sm"
           >
             Save
           </button>
@@ -2754,16 +2958,16 @@ function PrepTab({ meals, setMeals, location, setLocation, goals, setGoals, log,
 
   return (
     <div className="space-y-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex items-center gap-2">
-        <DollarSign size={16} className="text-zinc-500 shrink-0" />
+      <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3 flex items-center gap-2">
+        <DollarSign size={16} className="text-[#8C8378] shrink-0" />
         <input
-          className="flex-1 bg-transparent text-sm outline-none placeholder:text-zinc-600"
+          className="flex-1 bg-transparent text-sm outline-none placeholder:text-[#4A4238]"
           placeholder="Your area (e.g. Parkersburg, WV) — for cost context"
           value={location}
           onChange={(e) => setLocation(e.target.value)}
         />
       </div>
-      <p className="text-[11px] text-zinc-600 flex gap-1.5">
+      <p className="text-[11px] text-[#4A4238] flex gap-1.5">
         <Info size={13} className="shrink-0 mt-0.5" />
         Grocery costs below are estimates from typical US grocery pricing, not a live lookup of your local stores — tap any price to override it with what you actually pay.
       </p>
@@ -2772,7 +2976,7 @@ function PrepTab({ meals, setMeals, location, setLocation, goals, setGoals, log,
 
       <button
         onClick={() => setShowForm((s) => !s)}
-        className="w-full flex items-center justify-center gap-2 bg-orange-600 text-zinc-950 font-semibold rounded-xl py-2.5 text-sm"
+        className="w-full flex items-center justify-center gap-2 bg-[#C9A227] text-[#121110] font-semibold transition active:scale-[0.98] active:brightness-90 rounded-xl py-2.5 text-sm"
       >
         <Plus size={16} /> {showForm ? "Close" : "New meal prep item"}
       </button>
@@ -2850,11 +3054,11 @@ function GoalsPanel({ meals, goals, setGoals, onAddToToday, log, mealSlots, setM
   }, [result, location]);
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 space-y-3">
+    <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3.5 space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Daily goals</div>
+        <div className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide">Daily goals</div>
         {mode === "daily" && (
-          <button onClick={() => setShowTdee((s) => !s)} className="text-xs text-orange-500 font-medium">
+          <button onClick={() => setShowTdee((s) => !s)} className="text-xs text-[#C9A227] font-medium">
             {showTdee ? "Hide TDEE calculator" : "Calculate from TDEE"}
           </button>
         )}
@@ -2863,13 +3067,13 @@ function GoalsPanel({ meals, goals, setGoals, onAddToToday, log, mealSlots, setM
       <div className="flex gap-2">
         <button
           onClick={() => setMode("daily")}
-          className={`flex-1 rounded-lg py-1.5 text-xs font-medium border ${mode === "daily" ? "bg-orange-600 border-orange-600 text-zinc-950" : "border-zinc-800 text-zinc-400"}`}
+          className={`flex-1 rounded-lg py-1.5 text-xs font-medium border ${mode === "daily" ? "bg-[#C9A227] border-[#C9A227] text-[#121110]" : "border-[#241F1B] text-[#A79E92]"}`}
         >
           Daily total
         </button>
         <button
           onClick={() => setMode("perMeal")}
-          className={`flex-1 rounded-lg py-1.5 text-xs font-medium border ${mode === "perMeal" ? "bg-orange-600 border-orange-600 text-zinc-950" : "border-zinc-800 text-zinc-400"}`}
+          className={`flex-1 rounded-lg py-1.5 text-xs font-medium border ${mode === "perMeal" ? "bg-[#C9A227] border-[#C9A227] text-[#121110]" : "border-[#241F1B] text-[#A79E92]"}`}
         >
           Per-meal targets
         </button>
@@ -2882,13 +3086,13 @@ function GoalsPanel({ meals, goals, setGoals, onAddToToday, log, mealSlots, setM
       {mode === "daily" && (
       <>
       {showTdee && (
-        <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-3 space-y-2">
+        <div className="bg-[#121110] border border-[#241F1B] rounded-lg p-3 space-y-2">
           <div className="grid grid-cols-2 gap-2">
-            <select className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={bio.sex} onChange={(e) => setBio((b) => ({ ...b, sex: e.target.value }))}>
+            <select className="bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={bio.sex} onChange={(e) => setBio((b) => ({ ...b, sex: e.target.value }))}>
               <option value="male">Male</option>
               <option value="female">Female</option>
             </select>
-            <select className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={bio.activity} onChange={(e) => setBio((b) => ({ ...b, activity: e.target.value }))}>
+            <select className="bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={bio.activity} onChange={(e) => setBio((b) => ({ ...b, activity: e.target.value }))}>
               <option value="sedentary">Sedentary</option>
               <option value="light">Light activity</option>
               <option value="moderate">Moderate (training 3-5x/wk)</option>
@@ -2897,75 +3101,75 @@ function GoalsPanel({ meals, goals, setGoals, onAddToToday, log, mealSlots, setM
             </select>
           </div>
           <div className="grid grid-cols-3 gap-2">
-            <input type="number" placeholder="Weight (lb)" className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={bio.weightLb} onChange={(e) => setBio((b) => ({ ...b, weightLb: e.target.value }))} />
-            <input type="number" placeholder="Height (in)" className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={bio.heightIn} onChange={(e) => setBio((b) => ({ ...b, heightIn: e.target.value }))} />
-            <input type="number" placeholder="Age" className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={bio.age} onChange={(e) => setBio((b) => ({ ...b, age: e.target.value }))} />
+            <input type="number" placeholder="Weight (lb)" className="bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={bio.weightLb} onChange={(e) => setBio((b) => ({ ...b, weightLb: e.target.value }))} />
+            <input type="number" placeholder="Height (in)" className="bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={bio.heightIn} onChange={(e) => setBio((b) => ({ ...b, heightIn: e.target.value }))} />
+            <input type="number" placeholder="Age" className="bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={bio.age} onChange={(e) => setBio((b) => ({ ...b, age: e.target.value }))} />
           </div>
           <div className="flex items-center gap-2">
-            <input type="number" placeholder="+/- kcal (e.g. 300 for surplus)" className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={bio.adjust} onChange={(e) => setBio((b) => ({ ...b, adjust: e.target.value }))} />
-            <button onClick={runTdee} className="bg-orange-600 text-zinc-950 font-semibold rounded px-3 py-1.5 text-sm">Fill goals</button>
+            <input type="number" placeholder="+/- kcal (e.g. 300 for surplus)" className="flex-1 bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={bio.adjust} onChange={(e) => setBio((b) => ({ ...b, adjust: e.target.value }))} />
+            <button onClick={runTdee} className="bg-[#C9A227] text-[#121110] font-semibold transition active:scale-[0.98] active:brightness-90 rounded px-3 py-1.5 text-sm">Fill goals</button>
           </div>
-          <p className="text-[11px] text-zinc-600">Mifflin-St Jeor estimate. Protein/carb/fat split defaults to 1g/lb protein and 25% of calories from fat — edit the fields below to match your actual coach's numbers.</p>
+          <p className="text-[11px] text-[#4A4238]">Mifflin-St Jeor estimate. Protein/carb/fat split defaults to 1g/lb protein and 25% of calories from fat — edit the fields below to match your actual coach's numbers.</p>
         </div>
       )}
 
       <div className="grid grid-cols-4 gap-2">
         <div>
-          <label className="text-[10px] text-zinc-600">Calories</label>
-          <input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={goals.calories} onChange={(e) => setGoal("calories", e.target.value)} />
+          <label className="text-[10px] text-[#4A4238]">Calories</label>
+          <input type="number" className="w-full bg-[#121110] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={goals.calories} onChange={(e) => setGoal("calories", e.target.value)} />
         </div>
         <div>
           <label className={`text-[10px] font-medium ${MACRO_COLORS.protein.text}`}>Protein g</label>
-          <input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={goals.protein} onChange={(e) => setGoal("protein", e.target.value)} />
+          <input type="number" className="w-full bg-[#121110] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={goals.protein} onChange={(e) => setGoal("protein", e.target.value)} />
         </div>
         <div>
           <label className={`text-[10px] font-medium ${MACRO_COLORS.carbs.text}`}>Carb g</label>
-          <input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={goals.carbs} onChange={(e) => setGoal("carbs", e.target.value)} />
+          <input type="number" className="w-full bg-[#121110] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={goals.carbs} onChange={(e) => setGoal("carbs", e.target.value)} />
         </div>
         <div>
           <label className={`text-[10px] font-medium ${MACRO_COLORS.fat.text}`}>Fat g</label>
-          <input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={goals.fat} onChange={(e) => setGoal("fat", e.target.value)} />
+          <input type="number" className="w-full bg-[#121110] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={goals.fat} onChange={(e) => setGoal("fat", e.target.value)} />
         </div>
       </div>
       <div>
-        <label className="text-[10px] text-zinc-600">Weekly grocery budget (optional — leave blank for no cap)</label>
-        <input type="number" placeholder="e.g. 150" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={goals.budget} onChange={(e) => setGoal("budget", e.target.value)} />
+        <label className="text-[10px] text-[#4A4238]">Weekly grocery budget (optional — leave blank for no cap)</label>
+        <input type="number" placeholder="e.g. 150" className="w-full bg-[#121110] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={goals.budget} onChange={(e) => setGoal("budget", e.target.value)} />
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="text-[10px] text-zinc-600">Water target (oz/day, optional)</label>
-          <input type="number" placeholder="e.g. 128" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={goals.water || ""} onChange={(e) => setGoal("water", e.target.value)} />
+          <label className="text-[10px] text-[#4A4238]">Water target (oz/day, optional)</label>
+          <input type="number" placeholder="e.g. 128" className="w-full bg-[#121110] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={goals.water || ""} onChange={(e) => setGoal("water", e.target.value)} />
         </div>
         <div>
-          <label className="text-[10px] text-zinc-600">Step target (per day, optional)</label>
-          <input type="number" placeholder="e.g. 8000" className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={goals.steps || ""} onChange={(e) => setGoal("steps", e.target.value)} />
+          <label className="text-[10px] text-[#4A4238]">Step target (per day, optional)</label>
+          <input type="number" placeholder="e.g. 8000" className="w-full bg-[#121110] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={goals.steps || ""} onChange={(e) => setGoal("steps", e.target.value)} />
         </div>
       </div>
 
       <button
         onClick={() => generate(0)}
         disabled={!hasTargets || meals.length === 0}
-        className="w-full bg-orange-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-950 font-semibold rounded-lg py-2 text-sm"
+        className="w-full bg-[#C9A227] disabled:bg-[#241F1B] disabled:text-[#4A4238] text-[#121110] font-semibold rounded-lg py-2 text-sm"
       >
         Suggest a meal combo
       </button>
-      {meals.length === 0 && <p className="text-[11px] text-zinc-600 text-center">Add at least one meal below first.</p>}
+      {meals.length === 0 && <p className="text-[11px] text-[#4A4238] text-center">Add at least one meal below first.</p>}
 
       {result && (
-        <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-3 space-y-2">
+        <div className="bg-[#121110] border border-[#241F1B] rounded-lg p-3 space-y-2">
           {result.chosen.length === 0 ? (
-            <p className="text-sm text-zinc-500">No combo fits within that budget/target with your current meals — try adding cheaper or lower-calorie meals, or raising the budget.</p>
+            <p className="text-sm text-[#8C8378]">No combo fits within that budget/target with your current meals — try adding cheaper or lower-calorie meals, or raising the budget.</p>
           ) : (
             <>
               <div className="space-y-1.5">
                 {result.chosen.map((m, i) => (
                   <div key={i} className="flex items-center justify-between text-sm">
-                    <span className="text-zinc-200">{m.name}</span>
+                    <span className="text-[#DDD5C8]">{m.name}</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-zinc-500">{m.calories}kcal · ${mealCost(m, location).toFixed(2)}</span>
+                      <span className="text-xs text-[#8C8378]">{m.calories}kcal · ${mealCost(m, location).toFixed(2)}</span>
                       <button
                         onClick={() => { onAddToToday(m.id); setAddedIds((prev) => [...prev, `${i}`]); }}
-                        className={`text-xs rounded-full px-2 py-1 font-medium ${addedIds.includes(`${i}`) ? "bg-teal-700 text-zinc-100" : "bg-zinc-800 text-orange-500"}`}
+                        className={`text-xs rounded-full px-2 py-1 font-medium ${addedIds.includes(`${i}`) ? "bg-[#3E6473] text-[#EDE7DD]" : "bg-[#241F1B] text-[#C9A227]"}`}
                       >
                         {addedIds.includes(`${i}`) ? <Check size={12} /> : "Add"}
                       </button>
@@ -2973,20 +3177,20 @@ function GoalsPanel({ meals, goals, setGoals, onAddToToday, log, mealSlots, setM
                   </div>
                 ))}
               </div>
-              <div className="border-t border-zinc-800 pt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                <span className="text-zinc-500">Calories</span><span className="text-right">{totals.calories} / {target.calories}</span>
-                <span className="text-zinc-500">Protein</span><span className="text-right">{totals.protein}g / {target.protein}g</span>
-                <span className="text-zinc-500">Carbs</span><span className="text-right">{totals.carbs}g / {target.carbs}g</span>
-                <span className="text-zinc-500">Fat</span><span className="text-right">{totals.fat}g / {target.fat}g</span>
-                <span className="text-zinc-500">Cost (this combo)</span>
-                <span className={`text-right font-semibold ${budget && totals.cost > budget / 7 ? "text-red-500" : "text-teal-500"}`}>
+              <div className="border-t border-[#241F1B] pt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                <span className="text-[#8C8378]">Calories</span><span className="text-right">{totals.calories} / {target.calories}</span>
+                <span className="text-[#8C8378]">Protein</span><span className="text-right">{totals.protein}g / {target.protein}g</span>
+                <span className="text-[#8C8378]">Carbs</span><span className="text-right">{totals.carbs}g / {target.carbs}g</span>
+                <span className="text-[#8C8378]">Fat</span><span className="text-right">{totals.fat}g / {target.fat}g</span>
+                <span className="text-[#8C8378]">Cost (this combo)</span>
+                <span className={`text-right font-semibold ${budget && totals.cost > budget / 7 ? "text-[#C4593F]" : "text-[#6C93A6]"}`}>
                   ${totals.cost.toFixed(2)}{budget ? ` / $${(budget / 7).toFixed(2)} daily share` : ""}
                 </span>
               </div>
-              <button onClick={() => generate(0.4)} className="w-full flex items-center justify-center gap-1.5 text-xs text-zinc-400 border border-zinc-800 rounded-lg py-1.5">
+              <button onClick={() => generate(0.4)} className="w-full flex items-center justify-center gap-1.5 text-xs text-[#A79E92] border border-[#241F1B] rounded-lg py-1.5">
                 <RotateCcw size={12} /> Try a different combo
               </button>
-              <p className="text-[10px] text-zinc-600 flex gap-1"><Info size={11} className="shrink-0 mt-0.5" /> Heuristic best-fit from your saved meals, not a guaranteed exact match — nudge quantities or add more meal variety for a tighter fit.</p>
+              <p className="text-[10px] text-[#4A4238] flex gap-1"><Info size={11} className="shrink-0 mt-0.5" /> Heuristic best-fit from your saved meals, not a guaranteed exact match — nudge quantities or add more meal variety for a tighter fit.</p>
             </>
           )}
         </div>
@@ -3033,10 +3237,10 @@ function PerMealTargets({ mealSlots, setMealSlots, dailyTarget }) {
       )}
 
       {mealSlots.map((s) => (
-        <div key={s.id} className="bg-zinc-950 border border-zinc-800 rounded-lg p-3 space-y-2">
+        <div key={s.id} className="bg-[#121110] border border-[#241F1B] rounded-lg p-3 space-y-2">
           <div className="flex items-center gap-2">
             <input
-              className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm font-medium"
+              className="flex-1 bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-sm font-medium"
               value={s.label}
               onChange={(e) => updateSlot(s.id, "label", e.target.value)}
             />
@@ -3044,51 +3248,51 @@ function PerMealTargets({ mealSlots, setMealSlots, dailyTarget }) {
               type="time"
               value={s.time || ""}
               onChange={(e) => updateSlot(s.id, "time", e.target.value)}
-              className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm shrink-0"
+              className="bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-sm shrink-0"
             />
-            <button onClick={() => removeSlot(s.id)} className="text-zinc-600 hover:text-red-500 shrink-0"><Trash2 size={15} /></button>
+            <button onClick={() => removeSlot(s.id)} className="text-[#4A4238] hover:text-[#C4593F] shrink-0"><Trash2 size={15} /></button>
           </div>
           <div className="grid grid-cols-4 gap-2">
             <div>
               <label className={`text-[10px] font-medium ${MACRO_COLORS.protein.text}`}>Protein g</label>
-              <input type="number" className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={s.protein} onChange={(e) => updateSlot(s.id, "protein", e.target.value)} />
+              <input type="number" className="w-full bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={s.protein} onChange={(e) => updateSlot(s.id, "protein", e.target.value)} />
             </div>
             <div>
               <label className={`text-[10px] font-medium ${MACRO_COLORS.carbs.text}`}>Carb g</label>
-              <input type="number" className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={s.carbs} onChange={(e) => updateSlot(s.id, "carbs", e.target.value)} />
+              <input type="number" className="w-full bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={s.carbs} onChange={(e) => updateSlot(s.id, "carbs", e.target.value)} />
             </div>
             <div>
               <label className={`text-[10px] font-medium ${MACRO_COLORS.fat.text}`}>Fat g</label>
-              <input type="number" className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm" value={s.fat} onChange={(e) => updateSlot(s.id, "fat", e.target.value)} />
+              <input type="number" className="w-full bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-sm" value={s.fat} onChange={(e) => updateSlot(s.id, "fat", e.target.value)} />
             </div>
             <div>
-              <label className="text-[10px] text-zinc-600">Kcal</label>
-              <div className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm text-zinc-400">{slotCalories(s)}</div>
+              <label className="text-[10px] text-[#4A4238]">Kcal</label>
+              <div className="w-full bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-sm text-[#A79E92]">{slotCalories(s)}</div>
             </div>
           </div>
         </div>
       ))}
 
-      <button onClick={addSlot} className="w-full flex items-center justify-center gap-1.5 bg-zinc-800 text-orange-500 font-medium rounded-lg py-2 text-sm">
+      <button onClick={addSlot} className="w-full flex items-center justify-center gap-1.5 bg-[#241F1B] text-[#C9A227] font-medium rounded-lg py-2 text-sm">
         <Plus size={15} /> Add meal
       </button>
 
       {mealSlots.length > 0 && (
-        <div className="border-t border-zinc-800 pt-2.5 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-          <span className="text-zinc-500">Total across meals</span><span className="text-right">{sums.calories} kcal</span>
-          <span className="text-zinc-500">Protein / Carb / Fat</span>
+        <div className="border-t border-[#241F1B] pt-2.5 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+          <span className="text-[#8C8378]">Total across meals</span><span className="text-right">{sums.calories} kcal</span>
+          <span className="text-[#8C8378]">Protein / Carb / Fat</span>
           <span className="text-right">{sums.protein}g / {sums.carbs}g / {sums.fat}g</span>
           {dailyTarget.calories > 0 && (
             <>
-              <span className="text-zinc-500">vs. Daily total goal</span>
-              <span className={`text-right font-semibold ${Math.abs(sums.calories - dailyTarget.calories) > 100 ? "text-red-500" : "text-teal-500"}`}>
+              <span className="text-[#8C8378]">vs. Daily total goal</span>
+              <span className={`text-right font-semibold ${Math.abs(sums.calories - dailyTarget.calories) > 100 ? "text-[#C4593F]" : "text-[#6C93A6]"}`}>
                 {sums.calories} / {dailyTarget.calories} kcal
               </span>
             </>
           )}
         </div>
       )}
-      <p className="text-[10px] text-zinc-600 flex gap-1"><Info size={11} className="shrink-0 mt-0.5" /> Set a time on any meal above and it'll show up in the Reminders tab too — same data, either place works.</p>
+      <p className="text-[10px] text-[#4A4238] flex gap-1"><Info size={11} className="shrink-0 mt-0.5" /> Set a time on any meal above and it'll show up in the Reminders tab too — same data, either place works.</p>
     </div>
   );
 }
@@ -3735,16 +3939,16 @@ function BatchPrepPlanner({ location }) {
   const totalCost = scaled.reduce((s, i) => s + i.cost, 0);
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 space-y-3">
+    <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3.5 space-y-3">
       <div className="flex items-center gap-2 text-sm font-semibold">
-        <UtensilsCrossed size={16} className="text-orange-500" /> Batch prep planner
+        <UtensilsCrossed size={16} className="text-[#C9A227]" /> Batch prep planner
       </div>
-      <p className="text-xs text-zinc-500">Pick a recipe and how many days you want it to last — e.g. "chicken and rice for 3 days" scales the recipe ×3 and tells you whether that's still fridge-safe or you should freeze part of it.</p>
+      <p className="text-xs text-[#8C8378]">Pick a recipe and how many days you want it to last — e.g. "chicken and rice for 3 days" scales the recipe ×3 and tells you whether that's still fridge-safe or you should freeze part of it.</p>
 
       <select
         value={recipe.id}
         onChange={(e) => { setRecipeId(e.target.value); setOpen(true); }}
-        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
+        className="w-full bg-[#121110] border border-[#241F1B] rounded-lg px-3 py-2 text-sm"
       >
         {["Breakfast", "Lunch", "Dinner", "Snack"].map((slot) => (
           <optgroup key={slot} label={slot}>
@@ -3756,57 +3960,57 @@ function BatchPrepPlanner({ location }) {
       </select>
 
       <div className="flex items-center gap-3">
-        <span className="text-xs text-zinc-500 shrink-0">Prep for</span>
+        <span className="text-xs text-[#8C8378] shrink-0">Prep for</span>
         <input
           type="range" min="1" max="7" step="1"
           value={days}
           onChange={(e) => { setDays(Number(e.target.value)); setOpen(true); }}
-          className="flex-1 accent-orange-600"
+          className="flex-1 accent-[#C9A227]"
         />
-        <span className="text-sm font-semibold text-orange-500 w-16 text-right shrink-0">{days} day{days === 1 ? "" : "s"}</span>
+        <span className="text-sm font-semibold text-[#C9A227] w-16 text-right shrink-0">{days} day{days === 1 ? "" : "s"}</span>
       </div>
 
-      <div className={`rounded-lg p-2.5 flex items-start gap-2 text-xs ${fitsFridge ? "bg-teal-950/40 border border-teal-900/50" : "bg-red-950/40 border border-red-900/50"}`}>
-        <Clock size={14} className={`shrink-0 mt-0.5 ${fitsFridge ? "text-teal-500" : "text-red-500"}`} />
+      <div className={`rounded-lg p-2.5 flex items-start gap-2 text-xs ${fitsFridge ? "bg-[#16242A]/40 border border-[#1E3843]/50" : "bg-[#2A1512]/40 border border-[#4A241C]/50"}`}>
+        <Clock size={14} className={`shrink-0 mt-0.5 ${fitsFridge ? "text-[#6C93A6]" : "text-[#C4593F]"}`} />
         <div>
           {fitsFridge ? (
-            <span className="text-teal-400">Cook it once — this dish holds {shelf.fridgeDays} days in the fridge, so {days} day{days === 1 ? "" : "s"} worth is fine straight in the fridge.</span>
+            <span className="text-[#82A6B8]">Cook it once — this dish holds {shelf.fridgeDays} days in the fridge, so {days} day{days === 1 ? "" : "s"} worth is fine straight in the fridge.</span>
           ) : (
-            <span className="text-red-400">This dish only holds ~{shelf.fridgeDays} days in the fridge, but you asked for {days}. Refrigerate the first {shelf.fridgeDays} day{shelf.fridgeDays === 1 ? "" : "s"}' worth and freeze the rest (freezer: {shelf.freezer}) — thaw as you go.</span>
+            <span className="text-[#D37E68]">This dish only holds ~{shelf.fridgeDays} days in the fridge, but you asked for {days}. Refrigerate the first {shelf.fridgeDays} day{shelf.fridgeDays === 1 ? "" : "s"}' worth and freeze the rest (freezer: {shelf.freezer}) — thaw as you go.</span>
           )}
-          <div className="text-zinc-500 mt-1">{shelf.note}</div>
+          <div className="text-[#8C8378] mt-1">{shelf.note}</div>
         </div>
       </div>
 
       {open && (
-        <div className="space-y-2 pt-1 border-t border-zinc-800">
-          <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Recipe ×{days} — exact amounts</div>
+        <div className="space-y-2 pt-1 border-t border-[#241F1B]">
+          <div className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide">Recipe ×{days} — exact amounts</div>
           <div className="space-y-1">
             {scaled.map((ing, i) => (
               <div key={i} className="flex items-center justify-between text-xs">
-                <span className="text-zinc-300 capitalize">{ing.name}</span>
+                <span className="text-[#C7BFB2] capitalize">{ing.name}</span>
                 <div className="text-right">
-                  <div className="text-zinc-500">${ing.cost.toFixed(2)}</div>
-                  <div className="text-zinc-600 text-[10px]">
+                  <div className="text-[#8C8378]">${ing.cost.toFixed(2)}</div>
+                  <div className="text-[#4A4238] text-[10px]">
                     need {ing.qty.toFixed(2)} {ing.unit} · buy {ing.packagesToBuy} {ing.packageLabel}{ing.packagesToBuy === 1 ? "" : "s"}
                   </div>
                 </div>
               </div>
             ))}
           </div>
-          <div className="flex justify-between text-sm font-semibold pt-1.5 border-t border-zinc-800">
-            <span>Batch cost</span><span className="text-teal-500">${totalCost.toFixed(2)}</span>
+          <div className="flex justify-between text-sm font-semibold pt-1.5 border-t border-[#241F1B]">
+            <span>Batch cost</span><span className="text-[#6C93A6]">${totalCost.toFixed(2)}</span>
           </div>
-          <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide pt-1">Cook it</div>
+          <div className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide pt-1">Cook it</div>
           <div className="space-y-1">
             {recipe.instructions.map((step, i) => (
-              <div key={i} className="text-xs text-zinc-400 flex gap-2">
-                <span className="text-orange-500 font-semibold shrink-0">{i + 1}.</span>
+              <div key={i} className="text-xs text-[#A79E92] flex gap-2">
+                <span className="text-[#C9A227] font-semibold shrink-0">{i + 1}.</span>
                 <span>{step}</span>
               </div>
             ))}
           </div>
-          <p className="text-[10px] text-zinc-600 flex gap-1 pt-1"><Info size={11} className="shrink-0 mt-0.5" /> Cook time per step stays about the same regardless of batch size — use a bigger pan/pot for the scaled quantity, and add ~5-10 min if things are more densely packed than a single serving. Cool cooked food within 2 hours before refrigerating.</p>
+          <p className="text-[10px] text-[#4A4238] flex gap-1 pt-1"><Info size={11} className="shrink-0 mt-0.5" /> Cook time per step stays about the same regardless of batch size — use a bigger pan/pot for the scaled quantity, and add ~5-10 min if things are more densely packed than a single serving. Cool cooked food within 2 hours before refrigerating.</p>
         </div>
       )}
     </div>
@@ -3911,13 +4115,13 @@ function WeekView({ meals, log, setLog, activeProgramKey, target, mealSlots = []
 
   return (
     <div className="space-y-3">
-      <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-3 flex items-center justify-between text-sm">
-        <span className="text-zinc-500">Week grocery cost (planned so far)</span>
-        <span className={`font-semibold ${overBudget ? "text-red-500" : "text-teal-500"}`}>
+      <div className="bg-[#121110] border border-[#241F1B] rounded-lg p-3 flex items-center justify-between text-sm">
+        <span className="text-[#8C8378]">Week grocery cost (planned so far)</span>
+        <span className={`font-semibold ${overBudget ? "text-[#C4593F]" : "text-[#6C93A6]"}`}>
           ${weekCost.toFixed(2)}{weeklyBudget ? ` / $${weeklyBudget.toFixed(2)}` : ""}
         </span>
       </div>
-      <p className="text-[11px] text-zinc-600 flex gap-1.5">
+      <p className="text-[11px] text-[#4A4238] flex gap-1.5">
         <Info size={12} className="shrink-0 mt-0.5" />
         Cost only counts days you've actually planned meals for; use "Fill with Cookbook" on empty days to fill them in. Training day info moved to the Today and Train tabs — this view is meals only.
       </p>
@@ -3929,13 +4133,13 @@ function WeekView({ meals, log, setLog, activeProgramKey, target, mealSlots = []
           ? cookedShelfLife(d.plannedMeals.flatMap((m) => (m.ingredients || []).map((i) => i.name)))
           : null;
         return (
-        <div key={d.date} className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5">
+        <div key={d.date} className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3.5">
           <div className="flex items-baseline justify-between mb-2">
             <div>
               <span className="font-semibold text-sm">{d.label}</span>
-              <span className="text-xs text-zinc-500 ml-1.5">{d.dateLabel}</span>
+              <span className="text-xs text-[#8C8378] ml-1.5">{d.dateLabel}</span>
             </div>
-            <span className={`text-xs font-semibold ${d.cost > 0 ? "text-teal-500" : "text-zinc-600"}`}>${d.cost.toFixed(2)}</span>
+            <span className={`text-xs font-semibold ${d.cost > 0 ? "text-[#6C93A6]" : "text-[#4A4238]"}`}>${d.cost.toFixed(2)}</span>
           </div>
 
           {d.plannedMeals.length === 0 ? (
@@ -3943,31 +4147,31 @@ function WeekView({ meals, log, setLog, activeProgramKey, target, mealSlots = []
               <button
                 onClick={() => fillDay(d.date)}
                 disabled={filling === d.date}
-                className="w-full flex items-center justify-center gap-1.5 text-xs text-zinc-400 border border-dashed border-zinc-800 rounded-lg py-2"
+                className="w-full flex items-center justify-center gap-1.5 text-xs text-[#A79E92] border border-dashed border-[#241F1B] rounded-lg py-2"
               >
                 {filling === d.date ? <Loader2 size={12} className="animate-spin" /> : <BookOpen size={12} />}
                 {filling === d.date ? "Filling…" : "Fill with Cookbook"}
               </button>
             ) : (
-              <div className="text-[11px] text-zinc-600 text-center py-2 border border-dashed border-zinc-800 rounded-lg">
+              <div className="text-[11px] text-[#4A4238] text-center py-2 border border-dashed border-[#241F1B] rounded-lg">
                 Set daily or per-meal targets in Prep → Daily goals to fill this day
               </div>
             )
           ) : (
             <div className="space-y-1">
               {d.plannedMeals.map((m) => (
-                <div key={m.id} className="flex items-center justify-between text-xs text-zinc-400">
+                <div key={m.id} className="flex items-center justify-between text-xs text-[#A79E92]">
                   <span className="truncate">{m.name}</span>
                   <span className="shrink-0 ml-2">{m.calories}kcal</span>
                 </div>
               ))}
-              <div className="text-[10px] text-zinc-600 pt-1 border-t border-zinc-800 mt-1.5 flex items-center gap-1.5">
+              <div className="text-[10px] text-[#4A4238] pt-1 border-t border-[#241F1B] mt-1.5 flex items-center gap-1.5">
                 <span>{d.macros.calories} kcal ·</span>
                 <MacroInline protein={d.macros.protein} carbs={d.macros.carbs} fat={d.macros.fat} size="text-[10px]" />
                 {target.calories > 0 ? <span>(target {target.calories} kcal)</span> : null}
               </div>
               {dayShelf && (
-                <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 pt-0.5">
+                <div className="flex items-center gap-1.5 text-[10px] text-[#8C8378] pt-0.5">
                   <Clock size={10} className="shrink-0" />
                   <span>Good in fridge ~{dayShelf.fridgeDays} days if cooked fresh today</span>
                 </div>
@@ -4047,13 +4251,13 @@ function CookbookTab({ goals, mealSlots = [], setMeals, setLog, meals, log, acti
       <div className="flex gap-2">
         <button
           onClick={() => setView("generate")}
-          className={`flex-1 rounded-lg py-2 text-sm font-medium border ${view === "generate" ? "bg-orange-600 border-orange-600 text-zinc-950" : "border-zinc-800 text-zinc-400"}`}
+          className={`flex-1 rounded-lg py-2 text-sm font-medium border ${view === "generate" ? "bg-[#C9A227] border-[#C9A227] text-[#121110]" : "border-[#241F1B] text-[#A79E92]"}`}
         >
           Generate
         </button>
         <button
           onClick={() => setView("week")}
-          className={`flex-1 rounded-lg py-2 text-sm font-medium border ${view === "week" ? "bg-orange-600 border-orange-600 text-zinc-950" : "border-zinc-800 text-zinc-400"}`}
+          className={`flex-1 rounded-lg py-2 text-sm font-medium border ${view === "week" ? "bg-[#C9A227] border-[#C9A227] text-[#121110]" : "border-[#241F1B] text-[#A79E92]"}`}
         >
           This week
         </button>
@@ -4065,17 +4269,17 @@ function CookbookTab({ goals, mealSlots = [], setMeals, setLog, meals, log, acti
 
       {view === "generate" && (
       <div className="space-y-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5">
+      <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3.5">
         <div className="flex items-center gap-2 text-sm font-semibold">
-          <BookOpen size={16} className="text-orange-500" /> Weekly cookbook & grocery list
+          <BookOpen size={16} className="text-[#C9A227]" /> Weekly cookbook & grocery list
         </div>
-        <p className="text-xs text-zinc-500 mt-1">
+        <p className="text-xs text-[#8C8378] mt-1">
           Builds entirely offline — no live AI call. {hasPerMealTargets
             ? `Matches each of your ${usableMealSlots.length} Per-meal targets (from Prep → Daily goals) to the single best-fitting recipe for that meal's own protein/carb/fat — not just the daily total — then picks two daily combos`
             : "Picks two daily meal combos that best fit your daily macro target (from Prep → Daily goals)"}, assigns one to 4 days and one to 3 days for realistic batch cooking, and gives you a grocery list and cooking instructions for the whole week. Several recipes are modeled on real pro bodybuilder diets — Ronnie Coleman, Kevin Levrone, Flex Wheeler, and Kai Greene all repeated a handful of staple meals rather than eating something different every day, which is exactly the batch-prep approach this builds.
         </p>
         {!hasPerMealTargets && (
-          <p className="text-[11px] text-orange-500/80 mt-2 flex gap-1.5">
+          <p className="text-[11px] text-[#C9A227]/80 mt-2 flex gap-1.5">
             <Info size={12} className="shrink-0 mt-0.5" />
             Set up Per-meal targets in Prep → Daily goals for meal-by-meal macro accuracy instead of just an overall daily fit.
           </p>
@@ -4088,61 +4292,61 @@ function CookbookTab({ goals, mealSlots = [], setMeals, setLog, meals, log, acti
 
       {hasTargets && (
         <>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 space-y-2">
+          <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3.5 space-y-2">
             {hasPerMealTargets ? (
               <div className="space-y-1">
                 {usableMealSlots.map((s) => (
-                  <div key={s.id} className="grid grid-cols-2 gap-x-3 text-xs text-zinc-400">
+                  <div key={s.id} className="grid grid-cols-2 gap-x-3 text-xs text-[#A79E92]">
                     <span className="truncate">{s.label}</span>
                     <span className="text-right">{s.protein || 0}g / {s.carbs || 0}g / {s.fat || 0}g</span>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-zinc-400">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-[#A79E92]">
                 <span>Daily target</span><span className="text-right">{target.calories} kcal</span>
                 <span>Protein / Carb / Fat</span><span className="text-right">{target.protein}g / {target.carbs}g / {target.fat}g</span>
               </div>
             )}
             {weeklyBudget > 0 && (
-              <div className="grid grid-cols-2 gap-x-3 text-xs text-zinc-400 pt-1 border-t border-zinc-800">
+              <div className="grid grid-cols-2 gap-x-3 text-xs text-[#A79E92] pt-1 border-t border-[#241F1B]">
                 <span>Weekly budget</span><span className="text-right">${weeklyBudget.toFixed(2)}</span>
               </div>
             )}
-            <button onClick={generate} className="w-full bg-orange-600 text-zinc-950 font-semibold rounded-lg py-2.5 text-sm">
+            <button onClick={generate} className="w-full bg-[#C9A227] text-[#121110] font-semibold transition active:scale-[0.98] active:brightness-90 rounded-lg py-2.5 text-sm">
               {week ? "Regenerate" : "Build my week"}
             </button>
           </div>
 
           {week && (
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs bg-zinc-950 border border-zinc-800 rounded-lg p-3">
-                <span className="text-zinc-500">Avg daily total</span><span className="text-right">{Math.round(week.avgDaily.calories)} kcal</span>
-                <span className="text-zinc-500">Protein / Carb / Fat</span><span className="text-right">{Math.round(week.avgDaily.protein)}g / {Math.round(week.avgDaily.carbs)}g / {Math.round(week.avgDaily.fat)}g</span>
-                <span className="text-zinc-500">Weekly grocery cost</span>
-                <span className={`text-right font-semibold ${overBudget ? "text-red-500" : "text-teal-500"}`}>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs bg-[#121110] border border-[#241F1B] rounded-lg p-3">
+                <span className="text-[#8C8378]">Avg daily total</span><span className="text-right">{Math.round(week.avgDaily.calories)} kcal</span>
+                <span className="text-[#8C8378]">Protein / Carb / Fat</span><span className="text-right">{Math.round(week.avgDaily.protein)}g / {Math.round(week.avgDaily.carbs)}g / {Math.round(week.avgDaily.fat)}g</span>
+                <span className="text-[#8C8378]">Weekly grocery cost</span>
+                <span className={`text-right font-semibold ${overBudget ? "text-[#C4593F]" : "text-[#6C93A6]"}`}>
                   ${week.weeklyCost.toFixed(2)}{weeklyBudget ? ` / $${weeklyBudget.toFixed(2)}` : ""}
                 </span>
               </div>
               {overBudget && (
-                <p className="text-[11px] text-red-500 flex gap-1.5"><Info size={12} className="shrink-0 mt-0.5" /> This is the closest fit found — raise the budget or regenerate for a different combo.</p>
+                <p className="text-[11px] text-[#C4593F] flex gap-1.5"><Info size={12} className="shrink-0 mt-0.5" /> This is the closest fit found — raise the budget or regenerate for a different combo.</p>
               )}
 
-              <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">7-day layout</div>
+              <div className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide">7-day layout</div>
               <div className="grid grid-cols-1 gap-1.5">
                 {WEEK_DAY_LABELS.map((label, i) => {
                   const isA = COMBO_A_DAYS.includes(i);
                   const combo = isA ? week.comboA : week.comboB;
                   return (
-                    <div key={label} className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 flex items-center justify-between">
+                    <div key={label} className="bg-[#1B1917] border border-[#241F1B] rounded-lg px-3 py-2 flex items-center justify-between">
                       <div>
                         <span className="text-sm font-medium">{label}</span>
-                        <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${isA ? "bg-orange-900/40 text-orange-400" : "bg-teal-900/40 text-teal-400"}`}>Combo {isA ? "A" : "B"}</span>
+                        <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${isA ? "bg-[#3A2E0C]/40 text-[#D8B94A]" : "bg-[#1E3843]/40 text-[#82A6B8]"}`}>Combo {isA ? "A" : "B"}</span>
                       </div>
                       <button
                         onClick={() => addDayToToday(i)}
                         disabled={addedDays[i]}
-                        className={`text-[11px] rounded-full px-2 py-1 font-medium ${addedDays[i] ? "bg-teal-700 text-zinc-100" : "bg-zinc-800 text-orange-500"}`}
+                        className={`text-[11px] rounded-full px-2 py-1 font-medium ${addedDays[i] ? "bg-[#3E6473] text-[#EDE7DD]" : "bg-[#241F1B] text-[#C9A227]"}`}
                       >
                         {addedDays[i] ? <Check size={11} /> : "Add to today"}
                       </button>
@@ -4150,13 +4354,13 @@ function CookbookTab({ goals, mealSlots = [], setMeals, setLog, meals, log, acti
                   );
                 })}
               </div>
-              <p className="text-[11px] text-zinc-600">
+              <p className="text-[11px] text-[#4A4238]">
                 {week.perMealMode
                   ? `Combo A (Mon/Wed/Fri/Sun) and Combo B (Tue/Thu/Sat) each have one recipe per meal you set up in Prep (${week.slotLabels.length} meals) — cook each combo twice a week, not seven different days.`
                   : "Combo A (Mon/Wed/Fri/Sun) and Combo B (Tue/Thu/Sat) are each a fixed breakfast+lunch+dinner+snack — cook each one twice a week, not seven different meals."}
               </p>
 
-              <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide pt-1">Combo A meals</div>
+              <div className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide pt-1">Combo A meals</div>
               <div className="space-y-2">
                 {week.comboA.recipes.map((r, i) => {
                   const key = `${r.id}-A-${i}`;
@@ -4171,7 +4375,7 @@ function CookbookTab({ goals, mealSlots = [], setMeals, setLog, meals, log, acti
                   );
                 })}
               </div>
-              <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide pt-1">Combo B meals</div>
+              <div className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide pt-1">Combo B meals</div>
               <div className="space-y-2">
                 {week.comboB.recipes.map((r, i) => {
                   const key = `${r.id}-B-${i}`;
@@ -4187,31 +4391,31 @@ function CookbookTab({ goals, mealSlots = [], setMeals, setLog, meals, log, acti
                 })}
               </div>
 
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5">
-                <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Full week grocery list</div>
+              <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3.5">
+                <div className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide mb-2">Full week grocery list</div>
                 <div className="space-y-1.5">
                   {week.groceries.map((g, i) => (
                     <div key={i} className="flex items-center justify-between text-sm">
-                      <span className="text-zinc-300 capitalize">{g.name}</span>
+                      <span className="text-[#C7BFB2] capitalize">{g.name}</span>
                       <div className="text-right">
-                        <div className="text-zinc-500 text-xs">${g.cost.toFixed(2)}{g.guessed ? " *" : ""}</div>
-                        <div className="text-zinc-600 text-[10px]">
+                        <div className="text-[#8C8378] text-xs">${g.cost.toFixed(2)}{g.guessed ? " *" : ""}</div>
+                        <div className="text-[#4A4238] text-[10px]">
                           need {g.qty.toFixed(2)} {g.unit} · buy {g.packagesToBuy} {g.packageLabel}{g.packagesToBuy === 1 ? "" : "s"}
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
-                <div className="flex justify-between pt-2 mt-2 border-t border-zinc-800 text-sm font-semibold">
+                <div className="flex justify-between pt-2 mt-2 border-t border-[#241F1B] text-sm font-semibold">
                   <span>Total</span>
-                  <span className={overBudget ? "text-red-500" : "text-teal-500"}>${week.weeklyCost.toFixed(2)}</span>
+                  <span className={overBudget ? "text-[#C4593F]" : "text-[#6C93A6]"}>${week.weeklyCost.toFixed(2)}</span>
                 </div>
               </div>
 
-              <button onClick={generate} className="w-full flex items-center justify-center gap-1.5 text-xs text-zinc-400 border border-zinc-800 rounded-lg py-1.5">
+              <button onClick={generate} className="w-full flex items-center justify-center gap-1.5 text-xs text-[#A79E92] border border-[#241F1B] rounded-lg py-1.5">
                 <RotateCcw size={12} /> Try a different week
               </button>
-              <p className="text-[10px] text-zinc-600 flex gap-1"><Info size={11} className="shrink-0 mt-0.5" /> Macros are standard approximations, and items marked * had no close match in the price table (rough placeholder). Tap any meal above to see batch-cooking instructions.</p>
+              <p className="text-[10px] text-[#4A4238] flex gap-1"><Info size={11} className="shrink-0 mt-0.5" /> Macros are standard approximations, and items marked * had no close match in the price table (rough placeholder). Tap any meal above to see batch-cooking instructions.</p>
             </div>
           )}
         </>
@@ -4224,27 +4428,27 @@ function CookbookTab({ goals, mealSlots = [], setMeals, setLog, meals, log, acti
 
 function RecipeCard({ recipe, slotLabel, open, onToggle }) {
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+    <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] overflow-hidden">
       <button onClick={onToggle} className="w-full flex items-center justify-between p-3">
         <div className="text-left">
           {slotLabel && (
-            <div className="text-[10px] font-semibold text-teal-500 uppercase tracking-wide mb-0.5">{slotLabel}</div>
+            <div className="text-[10px] font-semibold text-[#6C93A6] uppercase tracking-wide mb-0.5">{slotLabel}</div>
           )}
           <div className="font-medium text-sm">{recipe.name}</div>
-          <div className="text-xs text-zinc-500 flex items-center gap-1.5 flex-wrap">
+          <div className="text-xs text-[#8C8378] flex items-center gap-1.5 flex-wrap">
             <span>{recipe.perServing.calories} kcal ·</span>
             <MacroInline protein={recipe.perServing.protein} carbs={recipe.perServing.carbs} fat={recipe.perServing.fat} />
             <span>per serving</span>
           </div>
-          {recipe.inspiredBy && <div className="text-[10px] text-orange-500 mt-0.5">Inspired by: {recipe.inspiredBy}</div>}
+          {recipe.inspiredBy && <div className="text-[10px] text-[#C9A227] mt-0.5">Inspired by: {recipe.inspiredBy}</div>}
         </div>
-        {open ? <ChevronDown size={16} className="text-zinc-500 shrink-0" /> : <ChevronRight size={16} className="text-zinc-500 shrink-0" />}
+        {open ? <ChevronDown size={16} className="text-[#8C8378] shrink-0" /> : <ChevronRight size={16} className="text-[#8C8378] shrink-0" />}
       </button>
       {open && (
-        <div className="px-3 pb-3 border-t border-zinc-800 pt-2.5 space-y-1.5">
+        <div className="px-3 pb-3 border-t border-[#241F1B] pt-2.5 space-y-1.5">
           {recipe.instructions.map((step, i) => (
-            <div key={i} className="text-xs text-zinc-400 flex gap-2">
-              <span className="text-orange-500 font-semibold shrink-0">{i + 1}.</span>
+            <div key={i} className="text-xs text-[#A79E92] flex gap-2">
+              <span className="text-[#C9A227] font-semibold shrink-0">{i + 1}.</span>
               <span>{step}</span>
             </div>
           ))}
@@ -4316,10 +4520,10 @@ function LogbookTab({ goals, foodLog, setFoodLog }) {
         type="date"
         value={date}
         onChange={(e) => setDate(e.target.value)}
-        className="bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-sm text-zinc-300"
+        className="bg-[#1B1917] border border-[#241F1B] rounded-lg px-2.5 py-1.5 text-sm text-[#C7BFB2]"
       />
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4">
+      <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-4 flex items-center gap-4">
         <CalorieRing value={totals.calories} target={target.calories} size={112} stroke={10} />
         <div className="flex-1 min-w-0 space-y-2">
           {target.calories > 0 ? (
@@ -4329,34 +4533,34 @@ function LogbookTab({ goals, foodLog, setFoodLog }) {
               <MacroBar label="Fat" color={MACRO_COLORS.fat} val={totals.fat} tgt={target.fat} />
             </>
           ) : (
-            <p className="text-xs text-zinc-500">Set daily goals in Prep to see progress bars here.</p>
+            <p className="text-xs text-[#8C8378]">Set daily goals in Prep to see progress bars here.</p>
           )}
         </div>
       </div>
 
       <div className="space-y-2">
-        <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Today's entries</div>
+        <div className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide">Today's entries</div>
         {entries.length === 0 && (
           <EmptyState icon={Search} title="Nothing logged yet" body="Search the food database below or add a custom item." />
         )}
         {entries.map((e) => (
-          <div key={e.id} className="bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 flex items-center justify-between">
+          <div key={e.id} className="bg-[#1B1917] border border-[#241F1B] rounded-lg p-2.5 flex items-center justify-between">
             <div className="min-w-0">
               <div className="text-sm font-medium truncate">{e.name}</div>
-              <div className="text-xs text-zinc-500 flex items-center gap-1.5 flex-wrap">
+              <div className="text-xs text-[#8C8378] flex items-center gap-1.5 flex-wrap">
                 <span>{e.qty}× {e.serving} · {Math.round(e.calories)} kcal ·</span>
                 <MacroInline protein={e.protein} carbs={e.carbs} fat={e.fat} />
               </div>
             </div>
-            <button onClick={() => removeEntry(e.id)} className="text-zinc-600 hover:text-red-500 shrink-0 ml-2"><Trash2 size={15} /></button>
+            <button onClick={() => removeEntry(e.id)} className="text-[#4A4238] hover:text-[#C4593F] shrink-0 ml-2"><Trash2 size={15} /></button>
           </div>
         ))}
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex items-center gap-2">
-        <Search size={16} className="text-zinc-500 shrink-0" />
+      <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3 flex items-center gap-2">
+        <Search size={16} className="text-[#8C8378] shrink-0" />
         <input
-          className="flex-1 bg-transparent text-sm outline-none placeholder:text-zinc-600"
+          className="flex-1 bg-transparent text-sm outline-none placeholder:text-[#4A4238]"
           placeholder="Search food database…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -4366,7 +4570,7 @@ function LogbookTab({ goals, foodLog, setFoodLog }) {
       <div className="space-y-3">
         {grouped.map(([category, foods]) => (
           <div key={category}>
-            <div className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wide mb-1.5">{category}</div>
+            <div className="text-[11px] font-semibold text-[#4A4238] uppercase tracking-wide mb-1.5">{category}</div>
             <div className="space-y-1.5">
               {foods.map((f) => (
                 <FoodDbRow key={f.name} food={f} onAdd={(qty) => addEntry({
@@ -4386,14 +4590,14 @@ function LogbookTab({ goals, foodLog, setFoodLog }) {
 
       <button
         onClick={() => setCustomOpen((s) => !s)}
-        className="w-full flex items-center justify-center gap-2 bg-zinc-900 border border-zinc-800 text-zinc-300 font-medium rounded-xl py-2.5 text-sm"
+        className="w-full flex items-center justify-center gap-2 bg-[#1B1917] border border-[#241F1B] text-[#C7BFB2] font-medium rounded-xl py-2.5 text-sm"
       >
         <Plus size={15} /> {customOpen ? "Close" : "Log a custom food"}
       </button>
       {customOpen && (
         <CustomFoodForm onSave={(entry) => { addEntry(entry); setCustomOpen(false); }} />
       )}
-      <p className="text-[10px] text-zinc-600 flex gap-1"><Info size={11} className="shrink-0 mt-0.5" /> Macros are standard approximations per listed serving, not lab-verified — use the custom entry for anything that doesn't match, or adjust the serving count to match what you actually ate.</p>
+      <p className="text-[10px] text-[#4A4238] flex gap-1"><Info size={11} className="shrink-0 mt-0.5" /> Macros are standard approximations per listed serving, not lab-verified — use the custom entry for anything that doesn't match, or adjust the serving count to match what you actually ate.</p>
     </div>
   );
 }
@@ -4401,10 +4605,10 @@ function LogbookTab({ goals, foodLog, setFoodLog }) {
 function FoodDbRow({ food, onAdd }) {
   const [qty, setQty] = useState(1);
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 flex items-center gap-2">
+    <div className="bg-[#1B1917] border border-[#241F1B] rounded-lg p-2.5 flex items-center gap-2">
       <div className="flex-1 min-w-0">
-        <div className="text-sm text-zinc-200 truncate">{food.name}</div>
-        <div className="text-[11px] text-zinc-500 flex items-center gap-1.5">
+        <div className="text-sm text-[#DDD5C8] truncate">{food.name}</div>
+        <div className="text-[11px] text-[#8C8378] flex items-center gap-1.5">
           <span>{food.serving} · {food.calories} kcal ·</span>
           <MacroInline protein={food.protein} carbs={food.carbs} fat={food.fat} size="text-[11px]" />
         </div>
@@ -4415,9 +4619,9 @@ function FoodDbRow({ food, onAdd }) {
         min="0.5"
         value={qty}
         onChange={(e) => setQty(Number(e.target.value) || 1)}
-        className="w-14 bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-sm text-center"
+        className="w-14 bg-[#121110] border border-[#241F1B] rounded px-1.5 py-1 text-sm text-center"
       />
-      <button onClick={() => onAdd(qty)} className="shrink-0 bg-orange-600 text-zinc-950 rounded-full p-1.5"><Plus size={14} /></button>
+      <button onClick={() => onAdd(qty)} className="shrink-0 bg-[#C9A227] text-[#121110] rounded-full p-1.5"><Plus size={14} /></button>
     </div>
   );
 }
@@ -4444,16 +4648,16 @@ function CustomFoodForm({ onSave }) {
   };
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 space-y-2.5">
-      <input className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm" placeholder="Food name" value={name} onChange={(e) => setName(e.target.value)} />
-      <input className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm" placeholder="Serving (e.g. 1 cup, 6oz)" value={serving} onChange={(e) => setServing(e.target.value)} />
+    <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3.5 space-y-2.5">
+      <input className="w-full bg-[#121110] border border-[#241F1B] rounded-lg px-3 py-2 text-sm" placeholder="Food name" value={name} onChange={(e) => setName(e.target.value)} />
+      <input className="w-full bg-[#121110] border border-[#241F1B] rounded-lg px-3 py-2 text-sm" placeholder="Serving (e.g. 1 cup, 6oz)" value={serving} onChange={(e) => setServing(e.target.value)} />
       <div className="grid grid-cols-4 gap-2">
-        <input type="number" className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-2 text-sm" placeholder="kcal" value={calories} onChange={(e) => setCalories(e.target.value)} />
-        <input type="number" className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-2 text-sm" placeholder="protein g" value={protein} onChange={(e) => setProtein(e.target.value)} />
-        <input type="number" className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-2 text-sm" placeholder="carbs g" value={carbs} onChange={(e) => setCarbs(e.target.value)} />
-        <input type="number" className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-2 text-sm" placeholder="fat g" value={fat} onChange={(e) => setFat(e.target.value)} />
+        <input type="number" className="bg-[#121110] border border-[#241F1B] rounded-lg px-2 py-2 text-sm" placeholder="kcal" value={calories} onChange={(e) => setCalories(e.target.value)} />
+        <input type="number" className="bg-[#121110] border border-[#241F1B] rounded-lg px-2 py-2 text-sm" placeholder="protein g" value={protein} onChange={(e) => setProtein(e.target.value)} />
+        <input type="number" className="bg-[#121110] border border-[#241F1B] rounded-lg px-2 py-2 text-sm" placeholder="carbs g" value={carbs} onChange={(e) => setCarbs(e.target.value)} />
+        <input type="number" className="bg-[#121110] border border-[#241F1B] rounded-lg px-2 py-2 text-sm" placeholder="fat g" value={fat} onChange={(e) => setFat(e.target.value)} />
       </div>
-      <button onClick={submit} className="w-full bg-orange-600 text-zinc-950 font-semibold rounded-lg py-2 text-sm">Log it</button>
+      <button onClick={submit} className="w-full bg-[#C9A227] text-[#121110] font-semibold transition active:scale-[0.98] active:brightness-90 rounded-lg py-2 text-sm">Log it</button>
     </div>
   );
 }
@@ -4494,34 +4698,34 @@ function GroceryTab({ groceryPlan, setGroceryPlan, meals, location }) {
 
   return (
     <div className="space-y-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5">
+      <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3.5">
         <div className="flex items-center gap-2 text-sm font-semibold">
-          <ShoppingCart size={16} className="text-orange-500" /> Grocery & batch prep
+          <ShoppingCart size={16} className="text-[#C9A227]" /> Grocery & batch prep
         </div>
-        <p className="text-xs text-zinc-500 mt-1">
+        <p className="text-xs text-[#8C8378] mt-1">
           Pick recipes from the Cookbook library below, set how many servings you want to batch cook with each slider, and get exact scaled ingredient amounts, the recipe, and shelf-life guidance — plus one combined grocery list across everything you've selected.
         </p>
       </div>
 
       {selected.length > 0 && (
-        <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3.5">
-          <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Combined grocery list</div>
+        <div className="bg-[#121110] border border-[#241F1B] rounded-xl p-3.5">
+          <div className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide mb-2">Combined grocery list</div>
           <div className="space-y-1.5">
             {combinedGroceries.map((g, i) => (
               <div key={i} className="flex items-center justify-between text-sm">
-                <span className="text-zinc-300 capitalize">{g.name}</span>
+                <span className="text-[#C7BFB2] capitalize">{g.name}</span>
                 <div className="text-right">
-                  <div className="text-zinc-500 text-xs">${g.cost.toFixed(2)}{g.guessed ? " *" : ""}</div>
-                  <div className="text-zinc-600 text-[10px]">
+                  <div className="text-[#8C8378] text-xs">${g.cost.toFixed(2)}{g.guessed ? " *" : ""}</div>
+                  <div className="text-[#4A4238] text-[10px]">
                     need {g.qty.toFixed(2)} {g.unit} · buy {g.packagesToBuy} {g.packageLabel}{g.packagesToBuy === 1 ? "" : "s"}
                   </div>
                 </div>
               </div>
             ))}
           </div>
-          <div className="flex justify-between pt-2 mt-2 border-t border-zinc-800 text-sm font-semibold">
+          <div className="flex justify-between pt-2 mt-2 border-t border-[#241F1B] text-sm font-semibold">
             <span>Total</span>
-            <span className="text-teal-500">${combinedCost.toFixed(2)}</span>
+            <span className="text-[#6C93A6]">${combinedCost.toFixed(2)}</span>
           </div>
         </div>
       )}
@@ -4529,7 +4733,7 @@ function GroceryTab({ groceryPlan, setGroceryPlan, meals, location }) {
       <div className="space-y-3">
         {["Breakfast", "Lunch", "Dinner", "Snack"].map((slot) => (
           <div key={slot}>
-            <div className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wide mb-1.5">{slot}</div>
+            <div className="text-[11px] font-semibold text-[#4A4238] uppercase tracking-wide mb-1.5">{slot}</div>
             <div className="space-y-2">
               {allRecipes.filter((r) => r.slot === slot).map((r) => (
                 <GroceryRecipeCard
@@ -4550,18 +4754,18 @@ function GroceryTab({ groceryPlan, setGroceryPlan, meals, location }) {
       </div>
 
       {meals.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5">
-          <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Your Prep meals</div>
-          <p className="text-[11px] text-zinc-600 mb-2">These are custom, so quantities aren't auto-scaled — batch-cook by multiplying the ingredient list yourself.</p>
+        <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3.5">
+          <div className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide mb-2">Your Prep meals</div>
+          <p className="text-[11px] text-[#4A4238] mb-2">These are custom, so quantities aren't auto-scaled — batch-cook by multiplying the ingredient list yourself.</p>
           <div className="space-y-1.5">
             {meals.map((m) => (
-              <div key={m.id} className="text-sm text-zinc-300">{m.name} <span className="text-zinc-600 text-xs">· {(m.ingredients || []).length} ingredients</span></div>
+              <div key={m.id} className="text-sm text-[#C7BFB2]">{m.name} <span className="text-[#4A4238] text-xs">· {(m.ingredients || []).length} ingredients</span></div>
             ))}
           </div>
         </div>
       )}
 
-      <p className="text-[10px] text-zinc-600 flex gap-1"><Info size={11} className="shrink-0 mt-0.5" /> Shelf-life windows are general food-safety guidance, not exact — when in doubt, trust your nose, and freeze anything you won't use within the fridge window.</p>
+      <p className="text-[10px] text-[#4A4238] flex gap-1"><Info size={11} className="shrink-0 mt-0.5" /> Shelf-life windows are general food-safety guidance, not exact — when in doubt, trust your nose, and freeze anything you won't use within the fridge window.</p>
     </div>
   );
 }
@@ -4580,30 +4784,30 @@ function GroceryRecipeCard({ recipe, servings, active, open, onToggleActive, onS
   const willSpoil = active && (servings || 1) > shelf.fridgeDays;
 
   return (
-    <div className={`bg-zinc-900 border rounded-xl overflow-hidden ${active ? "border-orange-700/60" : "border-zinc-800"}`}>
+    <div className={`bg-[#1B1917] border rounded-xl overflow-hidden ${active ? "border-[#9C7D1E]/60" : "border-[#241F1B]"}`}>
       <div className="flex items-center gap-2 p-3">
         <button
           onClick={onToggleActive}
           className={`w-7 h-7 shrink-0 rounded-full flex items-center justify-center border-2 transition-colors ${
-            active ? "bg-orange-600 border-orange-600" : "border-zinc-600"
+            active ? "bg-[#C9A227] border-[#C9A227]" : "border-[#4A4238]"
           }`}
         >
-          {active && <Check size={14} className="text-zinc-950" />}
+          {active && <Check size={14} className="text-[#121110]" />}
         </button>
         <button onClick={onToggleOpen} className="flex-1 min-w-0 text-left">
           <div className="font-medium text-sm truncate">{recipe.name}</div>
-          <div className="text-xs text-zinc-500 flex items-center gap-1.5">
+          <div className="text-xs text-[#8C8378] flex items-center gap-1.5">
             <span>{recipe.perServing.calories} kcal/serving ·</span>
             <MacroInline protein={recipe.perServing.protein} carbs={recipe.perServing.carbs} fat={recipe.perServing.fat} />
           </div>
         </button>
-        {open ? <ChevronDown size={16} className="text-zinc-500 shrink-0" /> : <ChevronRight size={16} className="text-zinc-500 shrink-0" />}
+        {open ? <ChevronDown size={16} className="text-[#8C8378] shrink-0" /> : <ChevronRight size={16} className="text-[#8C8378] shrink-0" />}
       </div>
 
       {active && (
         <div className="px-3 pb-3 space-y-2">
           <div className="flex items-center gap-2">
-            <SlidersHorizontal size={13} className="text-zinc-500 shrink-0" />
+            <SlidersHorizontal size={13} className="text-[#8C8378] shrink-0" />
             <input
               type="range"
               min="1"
@@ -4611,14 +4815,14 @@ function GroceryRecipeCard({ recipe, servings, active, open, onToggleActive, onS
               step="1"
               value={servings || 1}
               onChange={(e) => onServings(Number(e.target.value))}
-              className="flex-1 accent-orange-600"
+              className="flex-1 accent-[#C9A227]"
             />
-            <span className="text-sm font-semibold text-orange-500 w-24 text-right shrink-0">{servings} serving{servings === 1 ? "" : "s"}</span>
+            <span className="text-sm font-semibold text-[#C9A227] w-24 text-right shrink-0">{servings} serving{servings === 1 ? "" : "s"}</span>
           </div>
           {willSpoil && (
-            <div className="rounded-lg p-2.5 flex items-start gap-2 text-xs bg-red-950/40 border border-red-900/50">
-              <AlertTriangle size={14} className="shrink-0 mt-0.5 text-red-500" />
-              <span className="text-red-400">
+            <div className="rounded-lg p-2.5 flex items-start gap-2 text-xs bg-[#2A1512]/40 border border-[#4A241C]/50">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5 text-[#C4593F]" />
+              <span className="text-[#D37E68]">
                 This dish only holds ~{shelf.fridgeDays} day{shelf.fridgeDays === 1 ? "" : "s"} in the fridge, but {servings} servings is more than that (assuming ~1 serving/day). Freeze what you won't eat within {shelf.fridgeDays} day{shelf.fridgeDays === 1 ? "" : "s"} (freezer: {shelf.freezer}) or drop the serving count.
               </span>
             </div>
@@ -4627,9 +4831,9 @@ function GroceryRecipeCard({ recipe, servings, active, open, onToggleActive, onS
       )}
 
       {open && (
-        <div className="px-3 pb-3.5 border-t border-zinc-800 pt-3 space-y-3">
+        <div className="px-3 pb-3.5 border-t border-[#241F1B] pt-3 space-y-3">
           <div>
-            <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1.5">
+            <div className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide mb-1.5">
               Ingredients {active ? `(scaled to ${servings})` : "(per serving — select above to scale)"}
             </div>
             <div className="space-y-1.5">
@@ -4639,13 +4843,13 @@ function GroceryRecipeCard({ recipe, servings, active, open, onToggleActive, onS
               })).map((ing, i) => (
                 <div key={i} className="text-xs">
                   <div className="flex items-center justify-between">
-                    <span className="text-zinc-300 capitalize">{ing.name}</span>
-                    <span className="text-zinc-500">${ing.cost.toFixed(2)}</span>
+                    <span className="text-[#C7BFB2] capitalize">{ing.name}</span>
+                    <span className="text-[#8C8378]">${ing.cost.toFixed(2)}</span>
                   </div>
-                  <div className="text-zinc-600 text-[10px] mt-0.5">
+                  <div className="text-[#4A4238] text-[10px] mt-0.5">
                     need {ing.qty.toFixed(2)} {ing.unit} · buy {ing.packagesToBuy} {ing.packageLabel}{ing.packagesToBuy === 1 ? "" : "s"}
                   </div>
-                  <div className="text-zinc-600 flex items-center gap-1 mt-0.5">
+                  <div className="text-[#4A4238] flex items-center gap-1 mt-0.5">
                     <Clock size={10} className="shrink-0" />
                     <span>Fridge: {ing.shelf.fridge} · Freezer: {ing.shelf.freezer}</span>
                   </div>
@@ -4654,11 +4858,11 @@ function GroceryRecipeCard({ recipe, servings, active, open, onToggleActive, onS
             </div>
           </div>
           <div>
-            <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1.5">Recipe</div>
+            <div className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide mb-1.5">Recipe</div>
             <div className="space-y-1.5">
               {recipe.instructions.map((step, i) => (
-                <div key={i} className="text-xs text-zinc-400 flex gap-2">
-                  <span className="text-orange-500 font-semibold shrink-0">{i + 1}.</span>
+                <div key={i} className="text-xs text-[#A79E92] flex gap-2">
+                  <span className="text-[#C9A227] font-semibold shrink-0">{i + 1}.</span>
                   <span>{step}</span>
                 </div>
               ))}
@@ -4703,29 +4907,29 @@ function RemindersTab({ meals, mealTimes, setMealTimes, log, mealSlots, setMealS
 
   return (
     <div className="space-y-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5">
+      <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3.5">
         <div className="flex items-center gap-2 text-sm font-semibold">
-          <Bell size={16} className="text-orange-500" /> Meal reminders
+          <Bell size={16} className="text-[#C9A227]" /> Meal reminders
         </div>
-        <p className="text-xs text-zinc-500 mt-1">
+        <p className="text-xs text-[#8C8378] mt-1">
           Set a target time for each of today's planned meals and FORGE will notify you when it's time to eat, as long as it's still marked open on Today.
         </p>
-        <p className="text-[11px] text-zinc-600 mt-2 flex gap-1.5">
+        <p className="text-[11px] text-[#4A4238] mt-2 flex gap-1.5">
           <Info size={12} className="shrink-0 mt-0.5" />
           Works only while this app is open in your browser — there's no background push here, so leave it open (even in another tab) around mealtimes.
         </p>
       </div>
 
       {permission !== "granted" && permission !== "unsupported" && (
-        <button onClick={requestPermission} className="w-full bg-orange-600 text-zinc-950 font-semibold rounded-xl py-2.5 text-sm">
+        <button onClick={requestPermission} className="w-full bg-[#C9A227] text-[#121110] font-semibold transition active:scale-[0.98] active:brightness-90 rounded-xl py-2.5 text-sm">
           Enable notifications
         </button>
       )}
       {permission === "unsupported" && (
-        <p className="text-xs text-zinc-500 text-center">Notifications aren't supported in this browser context — reminders will still show as an in-app banner while FORGE is open.</p>
+        <p className="text-xs text-[#8C8378] text-center">Notifications aren't supported in this browser context — reminders will still show as an in-app banner while FORGE is open.</p>
       )}
       {permission === "denied" && (
-        <p className="text-xs text-red-500 text-center">Notifications are blocked for this page — enable them in your browser's site settings to get alerts, or rely on the in-app banner.</p>
+        <p className="text-xs text-[#C4593F] text-center">Notifications are blocked for this page — enable them in your browser's site settings to get alerts, or rely on the in-app banner.</p>
       )}
 
       {plannedMeals.length === 0 ? (
@@ -4735,16 +4939,16 @@ function RemindersTab({ meals, mealTimes, setMealTimes, log, mealSlots, setMealS
           {plannedMeals.map((m) => {
             const eaten = dayLog.entries[m.id]?.status === "done" || dayLog.entries[m.id]?.status === "replaced";
             return (
-              <div key={m.id} className={`bg-zinc-900 border rounded-xl p-3 flex items-center justify-between gap-3 ${eaten ? "border-zinc-800 opacity-50" : "border-zinc-800"}`}>
+              <div key={m.id} className={`bg-[#1B1917] border rounded-xl p-3 flex items-center justify-between gap-3 ${eaten ? "border-[#241F1B] opacity-50" : "border-[#241F1B]"}`}>
                 <div className="min-w-0">
                   <div className="font-medium text-sm truncate">{m.name}</div>
-                  <div className="text-xs text-zinc-500">{eaten ? "already logged today" : "not yet eaten"}</div>
+                  <div className="text-xs text-[#8C8378]">{eaten ? "already logged today" : "not yet eaten"}</div>
                 </div>
                 <input
                   type="time"
                   value={mealTimes[m.id] || ""}
                   onChange={(e) => setTime(m.id, e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-sm shrink-0"
+                  className="bg-[#121110] border border-[#241F1B] rounded-lg px-2 py-1.5 text-sm shrink-0"
                 />
               </div>
             );
@@ -4753,13 +4957,13 @@ function RemindersTab({ meals, mealTimes, setMealTimes, log, mealSlots, setMealS
       )}
 
       <div className="pt-2">
-        <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Per-meal targets (from Prep → Daily goals)</h3>
+        <h3 className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide mb-2">Per-meal targets (from Prep → Daily goals)</h3>
         {mealSlots.length === 0 ? (
-          <p className="text-sm text-zinc-500">No per-meal targets set up yet — build them in Prep → Daily goals → Per-meal targets.</p>
+          <p className="text-sm text-[#8C8378]">No per-meal targets set up yet — build them in Prep → Daily goals → Per-meal targets.</p>
         ) : (
           <div className="space-y-2">
             {mealSlots.map((s) => (
-              <div key={s.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex items-center justify-between gap-3">
+              <div key={s.id} className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="font-medium text-sm truncate">{s.label}</div>
                   <MacroInline protein={s.protein} carbs={s.carbs} fat={s.fat} />
@@ -4768,7 +4972,7 @@ function RemindersTab({ meals, mealTimes, setMealTimes, log, mealSlots, setMealS
                   type="time"
                   value={s.time || ""}
                   onChange={(e) => setSlotTime(s.id, e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-sm shrink-0"
+                  className="bg-[#121110] border border-[#241F1B] rounded-lg px-2 py-1.5 text-sm shrink-0"
                 />
               </div>
             ))}
@@ -4819,32 +5023,32 @@ function MealForm({ onSave }) {
   };
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
-      <input className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm" placeholder="Meal name (e.g. Chicken Rice Bowl)" value={name} onChange={(e) => setName(e.target.value)} />
-      <div className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5">
-        <div className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-1">Computed from ingredients below</div>
+    <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-4 space-y-3">
+      <input className="w-full bg-[#121110] border border-[#241F1B] rounded-lg px-3 py-2 text-sm" placeholder="Meal name (e.g. Chicken Rice Bowl)" value={name} onChange={(e) => setName(e.target.value)} />
+      <div className="bg-[#121110] border border-[#241F1B] rounded-lg px-3 py-2.5">
+        <div className="text-[10px] font-semibold text-[#4A4238] uppercase tracking-wide mb-1">Computed from ingredients below</div>
         <div className="flex items-center gap-3 text-sm">
-          <span className="font-semibold text-zinc-200">{liveMacros.calories} kcal</span>
+          <span className="font-semibold text-[#DDD5C8]">{liveMacros.calories} kcal</span>
           <MacroInline protein={liveMacros.protein} carbs={liveMacros.carbs} fat={liveMacros.fat} />
         </div>
         {liveMacros.unmatched.length > 0 && (
-          <div className="text-[11px] text-amber-500 mt-1.5">
+          <div className="text-[11px] text-[#C9A227] mt-1.5">
             No macro data for: {liveMacros.unmatched.join(", ")} — those ingredients aren't counted above. Check spelling or use a more common name.
           </div>
         )}
       </div>
       <div className="space-y-2">
-        <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Ingredients</div>
+        <div className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide">Ingredients</div>
         {ingredients.map((ing, i) => (
           <div key={i} className="flex gap-2">
-            <input className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm" placeholder="Ingredient (e.g. chicken breast)" value={ing.name} onChange={(e) => updateIng(i, "name", e.target.value)} />
-            <input className="w-20 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm" placeholder="qty" value={ing.qty} onChange={(e) => updateIng(i, "qty", e.target.value)} />
-            <button onClick={() => removeRow(i)} className="text-zinc-600 hover:text-red-500 px-1"><X size={16} /></button>
+            <input className="flex-1 bg-[#121110] border border-[#241F1B] rounded-lg px-3 py-2 text-sm" placeholder="Ingredient (e.g. chicken breast)" value={ing.name} onChange={(e) => updateIng(i, "name", e.target.value)} />
+            <input className="w-20 bg-[#121110] border border-[#241F1B] rounded-lg px-3 py-2 text-sm" placeholder="qty" value={ing.qty} onChange={(e) => updateIng(i, "qty", e.target.value)} />
+            <button onClick={() => removeRow(i)} className="text-[#4A4238] hover:text-[#C4593F] px-1"><X size={16} /></button>
           </div>
         ))}
-        <button onClick={addRow} className="text-xs text-orange-500 font-medium flex items-center gap-1"><Plus size={13} /> Add ingredient</button>
+        <button onClick={addRow} className="text-xs text-[#C9A227] font-medium flex items-center gap-1"><Plus size={13} /> Add ingredient</button>
       </div>
-      <button onClick={submit} className="w-full bg-orange-600 text-zinc-950 font-semibold rounded-lg py-2 text-sm">Save meal</button>
+      <button onClick={submit} className="w-full bg-[#C9A227] text-[#121110] font-semibold transition active:scale-[0.98] active:brightness-90 rounded-lg py-2 text-sm">Save meal</button>
     </div>
   );
 }
@@ -4861,44 +5065,44 @@ function MealCard({ meal, onDelete }) {
   }, [meal.ingredients, overrides]);
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+    <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] overflow-hidden">
       <button onClick={() => setOpen((s) => !s)} className="w-full flex items-center justify-between p-3.5">
         <div className="text-left">
           <div className="font-medium text-sm">{meal.name}</div>
-          <div className="text-xs text-zinc-500 flex items-center gap-1.5">
+          <div className="text-xs text-[#8C8378] flex items-center gap-1.5">
             <span>{meal.calories} kcal</span>
-            {(meal.protein || meal.carbs || meal.fat) ? <><span className="text-zinc-700">·</span><MacroInline protein={meal.protein} carbs={meal.carbs} fat={meal.fat} /></> : null}
+            {(meal.protein || meal.carbs || meal.fat) ? <><span className="text-[#3A342C]">·</span><MacroInline protein={meal.protein} carbs={meal.carbs} fat={meal.fat} /></> : null}
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-orange-500">~${total.toFixed(2)}</span>
-          {open ? <ChevronDown size={16} className="text-zinc-500" /> : <ChevronRight size={16} className="text-zinc-500" />}
+          <span className="text-sm font-semibold text-[#C9A227]">~${total.toFixed(2)}</span>
+          {open ? <ChevronDown size={16} className="text-[#8C8378]" /> : <ChevronRight size={16} className="text-[#8C8378]" />}
         </div>
       </button>
       {open && (
-        <div className="px-3.5 pb-3.5 space-y-2 border-t border-zinc-800 pt-3">
+        <div className="px-3.5 pb-3.5 space-y-2 border-t border-[#241F1B] pt-3">
           {(meal.ingredients || []).map((ing, i) => (
             <div key={i} className="flex items-center justify-between text-sm">
-              <span className="text-zinc-300">{ing.name} <span className="text-zinc-600">· {ing.qty}</span></span>
-              <span className="flex items-center gap-1 text-zinc-400">
-                <span className="text-xs text-zinc-600">/{ing.unit}</span>
+              <span className="text-[#C7BFB2]">{ing.name} <span className="text-[#4A4238]">· {ing.qty}</span></span>
+              <span className="flex items-center gap-1 text-[#A79E92]">
+                <span className="text-xs text-[#4A4238]">/{ing.unit}</span>
                 $
                 <input
                   type="number"
                   step="0.01"
                   defaultValue={ing.price}
                   onChange={(e) => setOverrides((prev) => ({ ...prev, [i]: e.target.value }))}
-                  className="w-14 bg-zinc-950 border border-zinc-800 rounded px-1 py-0.5 text-right"
+                  className="w-14 bg-[#121110] border border-[#241F1B] rounded px-1 py-0.5 text-right"
                 />
-                {ing.guessed && <span title="No close match found — rough placeholder estimate" className="text-zinc-600">*</span>}
+                {ing.guessed && <span title="No close match found — rough placeholder estimate" className="text-[#4A4238]">*</span>}
               </span>
             </div>
           ))}
-          <div className="flex justify-between pt-2 border-t border-zinc-800 text-sm font-semibold">
+          <div className="flex justify-between pt-2 border-t border-[#241F1B] text-sm font-semibold">
             <span>Est. total</span>
-            <span className="text-orange-500">${total.toFixed(2)}</span>
+            <span className="text-[#C9A227]">${total.toFixed(2)}</span>
           </div>
-          <button onClick={onDelete} className="text-xs text-red-500 flex items-center gap-1 pt-1"><Trash2 size={12} /> Delete meal</button>
+          <button onClick={onDelete} className="text-xs text-[#C4593F] flex items-center gap-1 pt-1"><Trash2 size={12} /> Delete meal</button>
         </div>
       )}
     </div>
@@ -4910,6 +5114,196 @@ function MealCard({ meal, onDelete }) {
 // ---------------------------------------------------------------------------
 // Extract cross-session history for one exercise within one program+day slot.
 // Used to drive AMRAP week-to-week progression and the volume trend hint.
+// ---------------------------------------------------------------------------
+// Session 3 (Vision 2.0 — Exercise Profile Pages) helpers.
+// Pure history/volume/recency functions verified in a standalone Node
+// script against 8 reference cases (cross-program history aggregation,
+// hand-summed volume totals, recency math) before being wired in here.
+// EXERCISE_LIBRARY/aliases are editorial content, not computed logic, but
+// resolveExerciseProfile() was checked against all 44 real exercise names
+// used in PROGRAMS to confirm none silently resolve to an empty profile.
+// ---------------------------------------------------------------------------
+
+// Reuses the EXACT SAME e1RM formula as checkForPR (weight*(1+(reps+rir)/30))
+// so the exercise page can never disagree with PR detection about which
+// set was actually a lifter's best.
+function e1rmFor(weight, reps, rir) {
+  return Math.round(Number(weight) * (1 + (Number(reps) + (Number(rir) || 0)) / 30) * 10) / 10;
+}
+
+// Scans EVERY logged session across ALL programs/days for a given exercise
+// name — unlike getExerciseHistory below (scoped to one program+dayIndex,
+// keeping only each session's last set), this is the full cross-program
+// history an exercise profile page needs.
+function getFullExerciseHistory(workoutLogs, exerciseName) {
+  const rows = [];
+  Object.entries(workoutLogs).forEach(([key, session]) => {
+    const [date, programKey, dayIndexStr] = key.split("|");
+    const sets = session[exerciseName];
+    if (!sets) return;
+    const indices = Object.keys(sets).map(Number).sort((a, b) => a - b);
+    indices.forEach((i) => {
+      const s = sets[i];
+      if (!s?.weight || !s?.reps) return;
+      rows.push({
+        date, programKey, dayIndex: Number(dayIndexStr), setIndex: i,
+        weight: Number(s.weight), reps: Number(s.reps), rir: Number(s.rir) || 0,
+        e1rm: e1rmFor(s.weight, s.reps, s.rir),
+      });
+    });
+  });
+  return rows.sort((a, b) => a.date.localeCompare(b.date) || a.setIndex - b.setIndex);
+}
+
+// Sums weight*reps per session date — the standard tonnage definition of
+// volume, hand-verified against a reference session before wiring in.
+function computeVolumeProgression(fullHistory) {
+  const byDate = {};
+  fullHistory.forEach((s) => {
+    byDate[s.date] = (byDate[s.date] || 0) + s.weight * s.reps;
+  });
+  return Object.entries(byDate)
+    .map(([date, volume]) => ({ date, volume }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function daysSinceLastTrained(fullHistory, today = new Date()) {
+  if (!fullHistory.length) return null;
+  const lastDate = fullHistory[fullHistory.length - 1].date;
+  const last = new Date(lastDate + "T00:00:00Z");
+  const diffMs = today.getTime() - last.getTime();
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
+const EXERCISE_LIBRARY = {
+  "Bench Press": { muscles: { primary: ["Chest"], secondary: ["Triceps", "Front Delts"] },
+    mistakes: ["Flaring elbows out to 90°, stressing the front of the shoulder", "Bouncing the bar off the chest instead of controlling the descent"],
+    alternatives: ["Incline DB Press", "Dips"] },
+  "Incline DB Press": { muscles: { primary: ["Upper Chest"], secondary: ["Front Delts", "Triceps"] },
+    mistakes: ["Bench angle too steep, turning it into a shoulder press", "Not controlling the dumbbells at the bottom of the stretch"],
+    alternatives: ["Bench Press", "Machine Flye"] },
+  "Machine Flye": { muscles: { primary: ["Chest"] }, secondary: [],
+    mistakes: ["Using momentum instead of a controlled squeeze at the midline"],
+    alternatives: ["Flat Flye", "Bench Press"] },
+  "Flat Flye": { muscles: { primary: ["Chest"] },
+    mistakes: ["Bending the elbows too much, turning it into a press", "Going too heavy and losing the stretch at the bottom"],
+    alternatives: ["Machine Flye", "Incline DB Press"] },
+  "Dips": { muscles: { primary: ["Chest", "Triceps"], secondary: ["Front Delts"] },
+    mistakes: ["Not going deep enough to load the chest", "Excessive forward lean turning it into a pure triceps move (fine if that's the goal, just be intentional)"],
+    alternatives: ["Close Grip Bench", "Bench Press"] },
+  "DB Pullover": { muscles: { primary: ["Lats", "Chest"], secondary: ["Triceps"] },
+    mistakes: ["Bending the elbows too much, which shifts load off the lats"],
+    alternatives: ["Wide Pulldown", "Cable Row"] },
+  "Deadlift": { muscles: { primary: ["Hamstrings", "Glutes", "Back"], secondary: ["Traps", "Forearms"] },
+    mistakes: ["Rounding the lower back under load", "Letting the bar drift away from the shins"],
+    alternatives: ["Back Squat", "Barbell Row"] },
+  "Wide Pulldown": { muscles: { primary: ["Lats"], secondary: ["Biceps", "Rear Delts"] },
+    mistakes: ["Leaning back excessively and turning it into a row", "Not achieving a full stretch at the top"],
+    alternatives: ["Wide Pull-up", "Cable Row"] },
+  "Wide Pull-up": { muscles: { primary: ["Lats"], secondary: ["Biceps", "Rear Delts"] },
+    mistakes: ["Kipping/using momentum instead of a controlled pull", "Partial range of motion at the top"],
+    alternatives: ["Wide Pulldown", "Cable Row"] },
+  "Weighted Pull-up": { muscles: { primary: ["Lats"], secondary: ["Biceps", "Rear Delts"] },
+    mistakes: ["Adding weight before bodyweight form is solid", "Not achieving full elbow extension at the bottom"],
+    alternatives: ["Wide Pulldown", "Wide Pull-up"] },
+  "Barbell Row": { muscles: { primary: ["Back", "Lats"], secondary: ["Biceps", "Rear Delts"] },
+    mistakes: ["Using torso momentum ('body English') instead of the back muscles", "Rounding the lower back"],
+    alternatives: ["T-Bar Row", "Cable Row"] },
+  "T-Bar Row": { muscles: { primary: ["Back", "Lats"], secondary: ["Biceps"] },
+    mistakes: ["Rounding the lower back to add range of motion"],
+    alternatives: ["Barbell Row", "Cable Row"] },
+  "Cable Row": { muscles: { primary: ["Back"], secondary: ["Biceps", "Rear Delts"] },
+    mistakes: ["Leaning back too far and turning it into a hip hinge", "Shrugging the traps instead of pulling with the back"],
+    alternatives: ["Barbell Row", "T-Bar Row"] },
+  "Seated Cable Row": { muscles: { primary: ["Back"], secondary: ["Biceps", "Rear Delts"] },
+    mistakes: ["Leaning back too far and turning it into a hip hinge", "Shrugging the traps instead of pulling with the back"],
+    alternatives: ["Barbell Row", "T-Bar Row"] },
+  "Back Extension": { muscles: { primary: ["Lower Back"], secondary: ["Glutes", "Hamstrings"] },
+    mistakes: ["Hyperextending at the top past neutral spine", "Using momentum instead of a controlled squeeze"],
+    alternatives: ["Deadlift"] },
+  "Back Squat": { muscles: { primary: ["Quads", "Glutes"], secondary: ["Hamstrings", "Lower Back"] },
+    mistakes: ["Knees caving inward on the way up", "Losing upright torso position and turning it into a good-morning"],
+    alternatives: ["Leg Press", "Squat Variation (Front Squat)"] },
+  "Squat Variation (Front Squat)": { muscles: { primary: ["Quads"], secondary: ["Glutes", "Upper Back"] },
+    mistakes: ["Elbows dropping, causing the bar to roll forward", "Excessive forward lean"],
+    alternatives: ["Back Squat", "Leg Press"] },
+  "Leg Press": { muscles: { primary: ["Quads", "Glutes"], secondary: ["Hamstrings"] },
+    mistakes: ["Lower back rounding off the pad at the bottom", "Locking the knees hard at the top"],
+    alternatives: ["Back Squat", "Walking Lunge"] },
+  "Leg Extension": { muscles: { primary: ["Quads"] }, secondary: [],
+    mistakes: ["Using momentum/swinging the weight instead of a controlled squeeze"],
+    alternatives: ["Leg Press"] },
+  "Leg Curl": { muscles: { primary: ["Hamstrings"] }, secondary: [],
+    mistakes: ["Hips rising off the pad to cheat the range of motion"],
+    alternatives: ["Deadlift"] },
+  "Lying Leg Curl": { muscles: { primary: ["Hamstrings"] }, secondary: [],
+    mistakes: ["Hips rising off the pad to cheat the range of motion"],
+    alternatives: ["Deadlift"] },
+  "Calf Raise": { muscles: { primary: ["Calves"] }, secondary: [],
+    mistakes: ["Bouncing at the bottom instead of a controlled stretch", "Cutting the top-of-rep contraction short"],
+    alternatives: [] },
+  "Standing Calf Raise": { muscles: { primary: ["Calves"] }, secondary: [],
+    mistakes: ["Bouncing at the bottom instead of a controlled stretch", "Cutting the top-of-rep contraction short"],
+    alternatives: [] },
+  "Walking Lunge": { muscles: { primary: ["Quads", "Glutes"], secondary: ["Hamstrings"] },
+    mistakes: ["Front knee traveling far past the toes on every step", "Short, choppy steps that limit range of motion"],
+    alternatives: ["Leg Press", "Back Squat"] },
+  "Overhead Press": { muscles: { primary: ["Shoulders"], secondary: ["Triceps", "Upper Chest"] },
+    mistakes: ["Excessive lower-back arch to help the bar past the sticking point", "Pressing the bar forward instead of straight up"],
+    alternatives: ["Machine Shoulder Press", "Lateral Raise"] },
+  "Standing Barbell Press": { muscles: { primary: ["Shoulders"], secondary: ["Triceps", "Upper Chest"] },
+    mistakes: ["Excessive lower-back arch to help the bar past the sticking point", "Pressing the bar forward instead of straight up"],
+    alternatives: ["Machine Shoulder Press", "Lateral Raise"] },
+  "Overhead Press Variation": { muscles: { primary: ["Shoulders"], secondary: ["Triceps", "Upper Chest"] },
+    mistakes: ["Excessive lower-back arch to help the weight past the sticking point"],
+    alternatives: ["Machine Shoulder Press", "Lateral Raise"] },
+  "Machine Shoulder Press": { muscles: { primary: ["Shoulders"], secondary: ["Triceps"] },
+    mistakes: ["Setting the seat too low, cutting off the bottom range of motion"],
+    alternatives: ["Overhead Press", "Lateral Raise"] },
+  "Lateral Raise": { muscles: { primary: ["Side Delts"] }, secondary: [],
+    mistakes: ["Using momentum/swinging the weight up instead of a controlled raise", "Shrugging the traps to assist"],
+    alternatives: ["Rear Delt Flye"] },
+  "Rear Delt Flye": { muscles: { primary: ["Rear Delts"] }, secondary: ["Upper Back"],
+    mistakes: ["Using momentum instead of squeezing the rear delts", "Turning it into a row by bending the elbows too much"],
+    alternatives: ["Lateral Raise", "Cable Row"] },
+  "Barbell Shrug": { muscles: { primary: ["Traps"] }, secondary: [],
+    mistakes: ["Rolling the shoulders instead of a straight up-and-down shrug"],
+    alternatives: [] },
+  "Barbell Curl": { muscles: { primary: ["Biceps"] }, secondary: [],
+    mistakes: ["Swinging the torso/using momentum instead of a strict curl", "Not fully extending the elbows at the bottom"],
+    alternatives: ["Incline DB Curl"] },
+  "Incline DB Curl": { muscles: { primary: ["Biceps"] }, secondary: [],
+    mistakes: ["Letting the shoulders roll forward instead of staying pinned to the bench"],
+    alternatives: ["Barbell Curl"] },
+  "Close Grip Bench": { muscles: { primary: ["Triceps"], secondary: ["Chest"] },
+    mistakes: ["Grip too narrow, straining the wrists", "Flaring elbows out, which shifts load back to the chest"],
+    alternatives: ["Triceps Pressdown", "Dips"] },
+  "Bench Variation (Close Grip)": { muscles: { primary: ["Triceps"], secondary: ["Chest"] },
+    mistakes: ["Grip too narrow, straining the wrists", "Flaring elbows out, which shifts load back to the chest"],
+    alternatives: ["Triceps Pressdown", "Dips"] },
+  "Triceps Pressdown": { muscles: { primary: ["Triceps"] }, secondary: [],
+    mistakes: ["Letting the elbows drift forward away from the torso", "Using body weight/leaning into it instead of isolating the triceps"],
+    alternatives: ["Close Grip Bench", "Overhead Rope Extension"] },
+  "Overhead Rope Extension": { muscles: { primary: ["Triceps"] }, secondary: [],
+    mistakes: ["Flaring the elbows out during the movement instead of keeping them fixed"],
+    alternatives: ["Triceps Pressdown"] },
+};
+
+const EXERCISE_ALIASES = {
+  "Flat Bench Press": "Bench Press",
+  "Flat Barbell Press": "Bench Press",
+  "Back Squat (speed)": "Back Squat",
+  "Squat or Bench": "Back Squat",
+  "Deadlift Variation (Deficit/RDL)": "Deadlift",
+  "Incline Press": "Incline DB Press",
+  "Seated DB Press": "Overhead Press",
+};
+
+function resolveExerciseProfile(name) {
+  const canonical = EXERCISE_ALIASES[name] || name;
+  return EXERCISE_LIBRARY[canonical] || null;
+}
+
 function getExerciseHistory(workoutLogs, programKey, dayIndex, exerciseName, targetReps) {
   const suffix = `|${programKey}|${dayIndex}`;
   const rows = Object.entries(workoutLogs)
@@ -4927,6 +5321,105 @@ function getExerciseHistory(workoutLogs, programKey, dayIndex, exerciseName, tar
     .filter(Boolean)
     .sort((a, b) => a.date.localeCompare(b.date));
   return rows;
+}
+
+// Exercise Profile Page (Vision 2.0 Session 3) — history, PR, e1RM, volume
+// progression, muscles worked, common mistakes, alternatives, and a simple
+// recency-based recovery estimate. Opened from the exercise name in
+// ExerciseLogger; reads workoutLogs/personalRecords already lifted in
+// TrainTab rather than fetching/duplicating anything.
+function ExerciseProfileModal({ exerciseName, workoutLogs, personalRecords, onClose }) {
+  const fullHistory = useMemo(() => getFullExerciseHistory(workoutLogs, exerciseName), [workoutLogs, exerciseName]);
+  const volume = useMemo(() => computeVolumeProgression(fullHistory), [fullHistory]);
+  const recency = daysSinceLastTrained(fullHistory);
+  const pr = personalRecords[exerciseName];
+  const profile = resolveExerciseProfile(exerciseName);
+  const recent = fullHistory.slice(-8).reverse();
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div
+        className="bg-[#121110] border border-[#241F1B] rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[85vh] overflow-y-auto p-4 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-bold text-[#EDE7DD]">{exerciseName}</h3>
+          <button onClick={onClose} className="text-[#8C8378] hover:text-[#C7BFB2]"><X size={18} /></button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="bg-[#1B1917] border border-[#241F1B] rounded-lg p-3">
+            <div className="text-[11px] font-semibold text-[#8C8378] uppercase tracking-wide">Current PR</div>
+            <div className="text-sm font-semibold text-[#EDE7DD] mt-0.5">
+              {pr ? `${pr.weight} × ${pr.reps}` : "No PR yet"}
+            </div>
+            {pr && <div className="text-[11px] text-[#8C8378]">e1RM {pr.e1rm} lb</div>}
+          </div>
+          <div className="bg-[#1B1917] border border-[#241F1B] rounded-lg p-3">
+            <div className="text-[11px] font-semibold text-[#8C8378] uppercase tracking-wide">Last trained</div>
+            <div className="text-sm font-semibold text-[#EDE7DD] mt-0.5">
+              {recency === null ? "Never" : recency === 0 ? "Today" : `${recency}d ago`}
+            </div>
+          </div>
+        </div>
+
+        {volume.length > 1 && (
+          <div>
+            <div className="text-[11px] font-semibold text-[#8C8378] uppercase tracking-wide mb-1.5">Volume trend</div>
+            <div className="flex items-end gap-1 h-16">
+              {volume.slice(-12).map((v, i, arr) => {
+                const max = Math.max(...arr.map((x) => x.volume), 1);
+                return <div key={v.date} title={`${v.date}: ${Math.round(v.volume)} lb`} className="flex-1 bg-[#9C7D1E]/70 rounded-sm" style={{ height: `${Math.max(6, (v.volume / max) * 100)}%` }} />;
+              })}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <div className="text-[11px] font-semibold text-[#8C8378] uppercase tracking-wide mb-1.5">Recent sets</div>
+          {recent.length === 0 ? (
+            <p className="text-xs text-[#4A4238]">No sets logged yet.</p>
+          ) : (
+            <div className="space-y-1">
+              {recent.map((s, i) => (
+                <div key={i} className="flex items-center justify-between text-xs text-[#A79E92] bg-[#1B1917] border border-[#241F1B] rounded px-2.5 py-1.5">
+                  <span>{s.date}</span>
+                  <span className="text-[#C7BFB2]">{s.weight} × {s.reps}{s.rir ? ` (${s.rir} RIR)` : ""}</span>
+                  <span className="text-[#4A4238]">e1RM {s.e1rm}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {profile && (
+          <div className="space-y-2.5 border-t border-[#241F1B] pt-3">
+            <div>
+              <div className="text-[11px] font-semibold text-[#8C8378] uppercase tracking-wide mb-1">Muscles worked</div>
+              <p className="text-xs text-[#A79E92]">
+                <span className="text-[#DDD5C8]">{profile.muscles.primary.join(", ")}</span>
+                {profile.muscles.secondary?.length > 0 && <> · {profile.muscles.secondary.join(", ")}</>}
+              </p>
+            </div>
+            {profile.mistakes?.length > 0 && (
+              <div>
+                <div className="text-[11px] font-semibold text-[#8C8378] uppercase tracking-wide mb-1">Common mistakes</div>
+                <ul className="text-xs text-[#A79E92] list-disc list-inside space-y-0.5">
+                  {profile.mistakes.map((m, i) => <li key={i}>{m}</li>)}
+                </ul>
+              </div>
+            )}
+            {profile.alternatives?.length > 0 && (
+              <div>
+                <div className="text-[11px] font-semibold text-[#8C8378] uppercase tracking-wide mb-1">Alternatives</div>
+                <p className="text-xs text-[#A79E92]">{profile.alternatives.join(", ")}</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function TrainTab({ activeProgramKey, setActiveProgramKey, workoutLogs, setWorkoutLogs, programStartDates, setProgramStartDates, trainingMaxes, setTrainingMaxes, personalRecords, setPersonalRecords, setPrXpEvents }) {
@@ -4952,6 +5445,7 @@ function TrainTab({ activeProgramKey, setActiveProgramKey, workoutLogs, setWorko
   const todayIsRest = todaySlotInfo.isRest;
 
   const [justHitPR, setJustHitPR] = useState(null); // { exerciseName, record } | null — cleared when a new set is logged
+  const [profileExercise, setProfileExercise] = useState(null); // exercise name string | null — Session 3 profile modal
 
   const logSet = (exerciseName, setIndex, data) => {
     setWorkoutLogs((prev) => {
@@ -4992,35 +5486,35 @@ function TrainTab({ activeProgramKey, setActiveProgramKey, workoutLogs, setWorko
   return (
     <div className="space-y-4">
       {justHitPR && (
-        <div className="bg-gradient-to-r from-orange-950/60 via-orange-900/40 to-orange-950/60 border border-orange-700/60 rounded-xl p-4 flex items-center justify-between shadow-lg shadow-orange-950/40">
+        <div className="bg-gradient-to-r from-[#241C08]/60 via-[#3A2E0C]/40 to-[#241C08]/60 border border-[#9C7D1E]/60 rounded-xl p-4 flex items-center justify-between shadow-lg shadow-[#241C08]/40">
           <div className="flex items-center gap-3">
-            <Trophy size={28} className="text-amber-400 shrink-0" />
+            <Trophy size={28} className="text-[#D8B94A] shrink-0" />
             <div>
-              <div className="text-orange-200 font-bold text-base uppercase tracking-wide">New PR</div>
-              <div className="text-zinc-200 text-sm font-medium">{justHitPR.exerciseName}</div>
-              <div className="text-zinc-400 text-xs mt-0.5">{justHitPR.record.weight} lb × {justHitPR.record.reps} — e1RM {justHitPR.record.e1rm} lb</div>
+              <div className="text-[#EEDFA8] font-bold text-base uppercase tracking-wide">New PR</div>
+              <div className="text-[#DDD5C8] text-sm font-medium">{justHitPR.exerciseName}</div>
+              <div className="text-[#A79E92] text-xs mt-0.5">{justHitPR.record.weight} lb × {justHitPR.record.reps} — e1RM {justHitPR.record.e1rm} lb</div>
             </div>
           </div>
-          <button onClick={() => setJustHitPR(null)} className="text-zinc-500 hover:text-zinc-300 self-start"><X size={16} /></button>
+          <button onClick={() => setJustHitPR(null)} className="text-[#8C8378] hover:text-[#C7BFB2] self-start"><X size={16} /></button>
         </div>
       )}
       <div>
-        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Program</label>
+        <label className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide">Program</label>
         <select
           value={activeProgramKey}
           onChange={(e) => { setActiveProgramKey(e.target.value); setDayIndex(0); }}
-          className="w-full mt-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm"
+          className="w-full mt-1 bg-[#1B1917] border border-[#241F1B] rounded-lg px-3 py-2.5 text-sm"
         >
           {Object.entries(PROGRAMS).map(([key, p]) => (
             <option key={key} value={key}>{p.label}</option>
           ))}
         </select>
-        <p className="text-xs text-zinc-500 mt-1.5">{program.style}</p>
+        <p className="text-xs text-[#8C8378] mt-1.5">{program.style}</p>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5">
+      <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3.5">
         {program.weeklySchedule && (
-          <div className={`text-xs font-medium mb-2 flex items-center gap-1.5 ${todayIsRest ? "text-zinc-500" : "text-teal-500"}`}>
+          <div className={`text-xs font-medium mb-2 flex items-center gap-1.5 ${todayIsRest ? "text-[#8C8378]" : "text-[#6C93A6]"}`}>
             <Bell size={12} />
             {todayIsRest ? "Today is a scheduled rest day on this program." : `Today's scheduled session: ${program.days[todaySlot.dayIndex].day}`}
           </div>
@@ -5028,45 +5522,45 @@ function TrainTab({ activeProgramKey, setActiveProgramKey, workoutLogs, setWorko
         {weekInfo ? (
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm font-semibold text-orange-500">{weekInfo.label}</div>
-              {weekInfo.done && <div className="text-xs text-red-500 mt-0.5">Program length reached — restart, or run another block.</div>}
+              <div className="text-sm font-semibold text-[#C9A227]">{weekInfo.label}</div>
+              {weekInfo.done && <div className="text-xs text-[#C4593F] mt-0.5">Program length reached — restart, or run another block.</div>}
             </div>
-            <button onClick={startProgram} className="text-xs text-zinc-500 border border-zinc-800 rounded-full px-2.5 py-1">Restart</button>
+            <button onClick={startProgram} className="text-xs text-[#8C8378] border border-[#241F1B] rounded-full px-2.5 py-1">Restart</button>
           </div>
         ) : (
-          <button onClick={startProgram} className="w-full bg-orange-600 text-zinc-950 font-semibold rounded-lg py-2 text-sm">
+          <button onClick={startProgram} className="w-full bg-[#C9A227] text-[#121110] font-semibold transition active:scale-[0.98] active:brightness-90 rounded-lg py-2 text-sm">
             Start this program today
           </button>
         )}
-        <button onClick={() => setShowGuide((s) => !s)} className="text-xs text-orange-500 font-medium mt-2">
+        <button onClick={() => setShowGuide((s) => !s)} className="text-xs text-[#C9A227] font-medium mt-2">
           {showGuide ? "Hide program guide" : "Why this program works this way"}
         </button>
         {showGuide && (
-          <div className="mt-2.5 pt-2.5 border-t border-zinc-800 space-y-2 text-xs text-zinc-400">
-            <div><span className="text-zinc-300 font-medium">Philosophy: </span>{program.philosophy}</div>
-            <div><span className="text-zinc-300 font-medium">Why these movements are paired: </span>{program.pairingLogic}</div>
-            <div><span className="text-zinc-300 font-medium">Structure: </span>{program.structureNotes}</div>
+          <div className="mt-2.5 pt-2.5 border-t border-[#241F1B] space-y-2 text-xs text-[#A79E92]">
+            <div><span className="text-[#C7BFB2] font-medium">Philosophy: </span>{program.philosophy}</div>
+            <div><span className="text-[#C7BFB2] font-medium">Why these movements are paired: </span>{program.pairingLogic}</div>
+            <div><span className="text-[#C7BFB2] font-medium">Structure: </span>{program.structureNotes}</div>
           </div>
         )}
       </div>
 
       {isBulldog && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5">
-          <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Training maxes (1RM)</div>
+        <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] p-3.5">
+          <div className="text-xs font-semibold text-[#8C8378] uppercase tracking-wide mb-2">Training maxes (1RM)</div>
           <div className="grid grid-cols-2 gap-2">
             {["Back Squat", "Bench Press", "Deadlift", "Overhead Press"].map((lift) => (
               <div key={lift}>
-                <label className="text-[10px] text-zinc-600">{lift}</label>
+                <label className="text-[10px] text-[#4A4238]">{lift}</label>
                 <input
                   type="number"
                   value={trainingMaxes[lift] || ""}
                   onChange={(e) => setMax(lift, e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm"
+                  className="w-full bg-[#121110] border border-[#241F1B] rounded px-2 py-1.5 text-sm"
                 />
               </div>
             ))}
           </div>
-          <p className="text-[11px] text-zinc-600 mt-2">Used to prescribe each wave's starting weight — week-to-week jumps within a wave are still driven by your logged AMRAP performance, not this number directly.</p>
+          <p className="text-[11px] text-[#4A4238] mt-2">Used to prescribe each wave's starting weight — week-to-week jumps within a wave are still driven by your logged AMRAP performance, not this number directly.</p>
         </div>
       )}
 
@@ -5076,7 +5570,7 @@ function TrainTab({ activeProgramKey, setActiveProgramKey, workoutLogs, setWorko
             key={i}
             onClick={() => setDayIndex(i)}
             className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border ${
-              dayIndex === i ? "bg-orange-600 border-orange-600 text-zinc-950" : "border-zinc-800 text-zinc-400"
+              dayIndex === i ? "bg-[#C9A227] border-[#C9A227] text-[#121110]" : "border-[#241F1B] text-[#A79E92]"
             }`}
           >
             {d.day}
@@ -5103,10 +5597,19 @@ function TrainTab({ activeProgramKey, setActiveProgramKey, workoutLogs, setWorko
               phasePrescription={phasePrescription}
               trainingMax={trainingMax}
               weekInWave={weekInfo?.weekInWave}
+              onOpenProfile={() => setProfileExercise(ex.name)}
             />
           );
         })}
       </div>
+      {profileExercise && (
+        <ExerciseProfileModal
+          exerciseName={profileExercise}
+          workoutLogs={workoutLogs}
+          personalRecords={personalRecords}
+          onClose={() => setProfileExercise(null)}
+        />
+      )}
     </div>
   );
 }
@@ -5137,22 +5640,22 @@ function RestTimer({ initialSeconds = 90, onDismiss }) {
   const mm = String(Math.floor(Math.max(0, seconds) / 60)).padStart(2, "0");
   const ss = String(Math.max(0, seconds) % 60).padStart(2, "0");
   return (
-    <div className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 mt-1.5 text-xs ${done ? "bg-emerald-950/40 border border-emerald-800/50 text-emerald-400" : "bg-zinc-900 border border-zinc-800 text-zinc-300"}`}>
+    <div className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 mt-1.5 text-xs ${done ? "bg-[#1A2211]/40 border border-[#3D5527]/50 text-[#8FA66B]" : "bg-[#1B1917] border border-[#241F1B] text-[#C7BFB2]"}`}>
       <span className="flex items-center gap-1.5"><Clock size={12} /> {done ? "Rest complete — go again" : `Resting: ${mm}:${ss}`}</span>
       <div className="flex items-center gap-2.5">
         {!done && (
           <>
-            <button onClick={() => setSeconds((s) => Math.max(0, s - 15))} className="text-zinc-500 hover:text-zinc-300">−15s</button>
-            <button onClick={() => setSeconds((s) => s + 15)} className="text-zinc-500 hover:text-zinc-300">+15s</button>
+            <button onClick={() => setSeconds((s) => Math.max(0, s - 15))} className="text-[#8C8378] hover:text-[#C7BFB2]">−15s</button>
+            <button onClick={() => setSeconds((s) => s + 15)} className="text-[#8C8378] hover:text-[#C7BFB2]">+15s</button>
           </>
         )}
-        <button onClick={onDismiss} className="text-zinc-500 hover:text-zinc-300"><X size={12} /></button>
+        <button onClick={onDismiss} className="text-[#8C8378] hover:text-[#C7BFB2]"><X size={12} /></button>
       </div>
     </div>
   );
 }
 
-function ExerciseLogger({ exercise, loggedSets, onLogSet, history, phasePrescription, trainingMax, weekInWave }) {
+function ExerciseLogger({ exercise, loggedSets, onLogSet, history, phasePrescription, trainingMax, weekInWave, onOpenProfile }) {
   const [open, setOpen] = useState(true);
   const setIndices = Array.from({ length: exercise.sets }, (_, i) => i);
   const lastSetIndex = exercise.sets - 1;
@@ -5176,42 +5679,47 @@ function ExerciseLogger({ exercise, loggedSets, onLogSet, history, phasePrescrip
   const warmup = referenceWeight ? warmupSets(referenceWeight) : [];
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-      <button onClick={() => setOpen((s) => !s)} className="w-full flex items-center justify-between p-3.5">
+    <div className="bg-[#1B1917] border border-[#241F1B] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.4)] overflow-hidden">
+      <div onClick={() => setOpen((s) => !s)} className="w-full flex items-center justify-between p-3.5 cursor-pointer">
         <div className="text-left">
-          <div className="font-medium text-sm">{exercise.name}{exercise.amrap ? " +" : ""}</div>
-          <div className="text-xs text-zinc-500">
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenProfile?.(); }}
+            className="font-medium text-sm text-[#EDE7DD] hover:text-[#D8B94A] underline decoration-dotted underline-offset-2"
+          >
+            {exercise.name}{exercise.amrap ? " +" : ""}
+          </button>
+          <div className="text-xs text-[#8C8378]">
             target {exercise.sets}×{exercise.reps}{exercise.amrap ? " (last set AMRAP)" : ""} · RIR {exercise.rir}{exercise.note ? ` · ${exercise.note}` : ""}
           </div>
         </div>
-        {open ? <ChevronDown size={16} className="text-zinc-500" /> : <ChevronRight size={16} className="text-zinc-500" />}
-      </button>
+        {open ? <ChevronDown size={16} className="text-[#8C8378]" /> : <ChevronRight size={16} className="text-[#8C8378]" />}
+      </div>
       {open && (
-        <div className="px-3.5 pb-3.5 border-t border-zinc-800 pt-3 space-y-2.5">
+        <div className="px-3.5 pb-3.5 border-t border-[#241F1B] pt-3 space-y-2.5">
           {warmup.length > 0 && (
-            <div className="bg-zinc-950 border border-sky-900/40 rounded-lg p-2.5 text-xs">
-              <div className="text-sky-400 font-medium flex items-center gap-1.5 mb-1"><Flame size={12} /> Warm-up</div>
-              <div className="flex flex-wrap gap-x-3 gap-y-1 text-zinc-400">
+            <div className="bg-[#121110] border border-[#1E3646]/40 rounded-lg p-2.5 text-xs">
+              <div className="text-[#7FA8C9] font-medium flex items-center gap-1.5 mb-1"><Flame size={12} /> Warm-up</div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[#A79E92]">
                 {warmup.map((w, i) => <span key={i}>{w.weight} lb × {w.reps}</span>)}
               </div>
             </div>
           )}
           {exercise.amrap && (amrapSuggestion || phaseWeight) && (
-            <div className="bg-zinc-950 border border-orange-900/40 rounded-lg p-2.5 text-xs">
+            <div className="bg-[#121110] border border-[#3A2E0C]/40 rounded-lg p-2.5 text-xs">
               {amrapSuggestion ? (
                 <>
-                  <div className="flex items-center gap-1.5 text-orange-500 font-medium">
+                  <div className="flex items-center gap-1.5 text-[#C9A227] font-medium">
                     <Flame size={12} /> Last AMRAP: {lastSession.weight} lb × {lastSession.reps} (target {exercise.reps})
                   </div>
-                  <div className="text-zinc-400 mt-1">Suggested today: <span className="text-zinc-100 font-semibold">{amrapSuggestion} lb</span> — auto-regulated, +1% per rep over target.</div>
+                  <div className="text-[#A79E92] mt-1">Suggested today: <span className="text-[#EDE7DD] font-semibold">{amrapSuggestion} lb</span> — auto-regulated, +1% per rep over target.</div>
                 </>
               ) : (
-                <div className="text-zinc-400">
-                  Wave start — prescribed: <span className="text-zinc-100 font-semibold">{phaseWeight ? `${phaseWeight} lb` : `${Math.round(phasePrescription.pct * 100)}% of 1RM`}</span> for {phasePrescription.reps}+ reps.
+                <div className="text-[#A79E92]">
+                  Wave start — prescribed: <span className="text-[#EDE7DD] font-semibold">{phaseWeight ? `${phaseWeight} lb` : `${Math.round(phasePrescription.pct * 100)}% of 1RM`}</span> for {phasePrescription.reps}+ reps.
                   {!trainingMax && " Enter a training max above to see a weight."}
                 </div>
               )}
-              {trend && <div className={`mt-1 ${trend.tone === "up" ? "text-teal-500" : trend.tone === "down" ? "text-red-500" : "text-zinc-500"}`}>{trend.text}</div>}
+              {trend && <div className={`mt-1 ${trend.tone === "up" ? "text-[#6C93A6]" : trend.tone === "down" ? "text-[#C4593F]" : "text-[#8C8378]"}`}>{trend.text}</div>}
             </div>
           )}
           {setIndices.map((i) => (
@@ -5258,25 +5766,25 @@ function SetRow({ setNumber, targetReps, targetRir, data, prevData, onSave, isAm
   };
 
   return (
-    <div className={`bg-zinc-950 border rounded-lg p-2.5 ${isAmrapSet ? "border-orange-900/50" : "border-zinc-800"}`}>
+    <div className={`bg-[#121110] border rounded-lg p-2.5 ${isAmrapSet ? "border-[#3A2E0C]/50" : "border-[#241F1B]"}`}>
       <div className="flex items-center gap-1.5 mb-1.5">
-        <span className="text-xs font-semibold text-zinc-500 w-16">Set {setNumber}{isAmrapSet ? " (AMRAP)" : ""}</span>
+        <span className="text-xs font-semibold text-[#8C8378] w-16">Set {setNumber}{isAmrapSet ? " (AMRAP)" : ""}</span>
         {suggestion && !saved && (
-          <span className="text-[11px] text-teal-500 flex items-center gap-1">
+          <span className="text-[11px] text-[#6C93A6] flex items-center gap-1">
             <Flame size={11} /> suggested: {suggestion} lb
           </span>
         )}
       </div>
       <div className="grid grid-cols-4 gap-1.5">
-        <input type="number" placeholder="lb" value={weight} onChange={(e) => { setWeight(e.target.value); setSaved(false); }} className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm text-center" />
-        <input type="number" placeholder={isAmrapSet ? "reps (max)" : "reps"} value={reps} onChange={(e) => { setReps(e.target.value); setSaved(false); }} className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm text-center" />
-        <input type="number" placeholder="RIR" value={rir} onChange={(e) => { setRir(e.target.value); setSaved(false); }} className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm text-center" />
-        <button onClick={commit} className={`rounded px-2 py-1.5 text-sm font-semibold ${saved ? "bg-teal-700 text-zinc-100" : "bg-orange-600 text-zinc-950"}`}>
+        <input type="number" placeholder="lb" value={weight} onChange={(e) => { setWeight(e.target.value); setSaved(false); }} className="bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-sm text-center" />
+        <input type="number" placeholder={isAmrapSet ? "reps (max)" : "reps"} value={reps} onChange={(e) => { setReps(e.target.value); setSaved(false); }} className="bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-sm text-center" />
+        <input type="number" placeholder="RIR" value={rir} onChange={(e) => { setRir(e.target.value); setSaved(false); }} className="bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-sm text-center" />
+        <button onClick={commit} className={`rounded px-2 py-1.5 text-sm font-semibold ${saved ? "bg-[#3E6473] text-[#EDE7DD]" : "bg-[#C9A227] text-[#121110]"}`}>
           {saved ? <Check size={15} className="mx-auto" /> : "Log"}
         </button>
       </div>
       {plates && plates.perSide.length > 0 && (
-        <div className="text-[10px] text-zinc-600 mt-1.5">
+        <div className="text-[10px] text-[#4A4238] mt-1.5">
           Per side: {formatPlateBreakdown(plates.perSide)}{!plates.exact && ` (closest to ${plateTarget}, loads ${plates.achievedWeight})`}
         </div>
       )}
@@ -5286,7 +5794,7 @@ function SetRow({ setNumber, targetReps, targetRir, data, prevData, onSave, isAm
         value={notes}
         onChange={(e) => { setNotes(e.target.value); setSaved(false); }}
         onBlur={commit}
-        className="w-full mt-1.5 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-xs text-zinc-400"
+        className="w-full mt-1.5 bg-[#1B1917] border border-[#241F1B] rounded px-2 py-1.5 text-xs text-[#A79E92]"
       />
     </div>
   );
@@ -5295,10 +5803,10 @@ function SetRow({ setNumber, targetReps, targetRir, data, prevData, onSave, isAm
 // ---------------------------------------------------------------------------
 function EmptyState({ icon: Icon, title, body }) {
   return (
-    <div className="border border-dashed border-zinc-800 rounded-xl p-6 text-center">
-      <Icon size={22} className="mx-auto text-zinc-700 mb-2" />
-      <div className="text-sm font-medium text-zinc-400">{title}</div>
-      <div className="text-xs text-zinc-600 mt-1">{body}</div>
+    <div className="border border-dashed border-[#241F1B] rounded-xl p-6 text-center">
+      <Icon size={22} className="mx-auto text-[#3A342C] mb-2" />
+      <div className="text-sm font-medium text-[#A79E92]">{title}</div>
+      <div className="text-xs text-[#4A4238] mt-1">{body}</div>
     </div>
   );
 }
