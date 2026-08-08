@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Check, X, Plus, Trash2, ChevronRight, ChevronDown, Dumbbell, UtensilsCrossed, ClipboardList, DollarSign, RotateCcw, Loader2, Flame, Info, BookOpen, Bell, ShoppingCart, Search, SlidersHorizontal, Clock, Trophy, TrendingUp, AlertTriangle, Play, Moon, HeartPulse } from "lucide-react";
+import { Check, X, Plus, Trash2, ChevronRight, ChevronDown, Dumbbell, UtensilsCrossed, ClipboardList, DollarSign, RotateCcw, Loader2, Flame, Info, BookOpen, Bell, ShoppingCart, Search, SlidersHorizontal, Clock, Trophy, TrendingUp, AlertTriangle, Play, Moon, HeartPulse, MoreHorizontal } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Storage — localStorage-backed persistence.
@@ -2272,39 +2272,92 @@ function Header() {
 }
 
 function NavBar({ tab, setTab }) {
-  const items = [
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const primary = [
     { key: "home", label: "Home", icon: Flame },
     { key: "today", label: "Today", icon: ClipboardList },
+    { key: "train", label: "Train", icon: Dumbbell },
+    { key: "progress", label: "Progress", icon: TrendingUp },
+  ];
+  const secondary = [
     { key: "prep", label: "Prep", icon: UtensilsCrossed },
     { key: "cookbook", label: "Cookbook", icon: BookOpen },
     { key: "grocery", label: "Grocery", icon: ShoppingCart },
     { key: "logbook", label: "Log", icon: Search },
-    { key: "train", label: "Train", icon: Dumbbell },
-    { key: "progress", label: "Progress", icon: TrendingUp },
-    { key: "reminders", label: "Remind", icon: Bell },
+    { key: "reminders", label: "Reminders", icon: Bell },
   ];
+  const secondaryActive = secondary.some((s) => s.key === tab);
+
+  const TabButton = ({ active, label, icon: Icon, onClick }) => (
+    <button
+      onClick={onClick}
+      className={`relative flex-1 flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors ${
+        active ? "text-[#D8B94A]" : "text-[#8C8378]"
+      }`}
+    >
+      {active && (
+        <span className="absolute top-0 inset-x-3 h-[2px] rounded-full bg-gradient-to-r from-transparent via-[#D8B94A] to-transparent" />
+      )}
+      <span className={`flex items-center justify-center w-9 h-7 rounded-full transition-colors ${active ? "bg-[#C9A227]/15" : ""}`}>
+        <Icon size={18} />
+      </span>
+      {label}
+    </button>
+  );
+
   return (
-    <nav className="fixed bottom-0 inset-x-0 bg-[#1B1917]/97 backdrop-blur border-t border-[#241F1B] z-10 shadow-[0_-4px_16px_rgba(0,0,0,0.35)]">
-      <div className="max-w-2xl mx-auto flex overflow-x-auto no-scrollbar">
-        {items.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`relative flex-1 min-w-[64px] shrink-0 flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors ${
-              tab === key ? "text-[#D8B94A]" : "text-[#8C8378]"
-            }`}
-          >
-            {tab === key && (
-              <span className="absolute top-0 inset-x-3 h-[2px] rounded-full bg-gradient-to-r from-transparent via-[#D8B94A] to-transparent" />
-            )}
-            <span className={`flex items-center justify-center w-9 h-7 rounded-full transition-colors ${tab === key ? "bg-[#C9A227]/15" : ""}`}>
-              <Icon size={18} />
-            </span>
-            {label}
-          </button>
-        ))}
-      </div>
-    </nav>
+    <>
+      {moreOpen && (
+        <div className="fixed inset-0 z-20 flex items-end justify-center">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setMoreOpen(false)}
+          />
+          <div className="relative w-full max-w-2xl bg-[#1B1917] border-t border-[#241F1B] rounded-t-2xl pb-8 pt-3 px-4 shadow-[0_-8px_24px_rgba(0,0,0,0.5)] animate-in slide-in-from-bottom duration-200">
+            <div className="w-9 h-1 rounded-full bg-[#3A342C] mx-auto mb-4" />
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[11px] font-semibold tracking-wide text-[#8C8378] uppercase">More</span>
+              <button onClick={() => setMoreOpen(false)} className="text-[#8C8378] p-1">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {secondary.map(({ key, label, icon: Icon }) => (
+                <button
+                  key={key}
+                  onClick={() => {
+                    setTab(key);
+                    setMoreOpen(false);
+                  }}
+                  className={`flex flex-col items-center justify-center gap-2 rounded-xl border py-4 transition-colors ${
+                    tab === key
+                      ? "bg-[#C9A227]/10 border-[#C9A227]/50 text-[#D8B94A]"
+                      : "bg-[#121110] border-[#241F1B] text-[#A79E92]"
+                  }`}
+                >
+                  <Icon size={20} />
+                  <span className="text-[11px] font-medium text-center leading-tight">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      <nav className="fixed bottom-0 inset-x-0 bg-[#1B1917]/97 backdrop-blur border-t border-[#241F1B] z-10 shadow-[0_-4px_16px_rgba(0,0,0,0.35)]">
+        <div className="max-w-2xl mx-auto flex">
+          {primary.map(({ key, label, icon: Icon }) => (
+            <TabButton key={key} active={tab === key} label={label} icon={Icon} onClick={() => setTab(key)} />
+          ))}
+          <TabButton
+            active={secondaryActive || moreOpen}
+            label="More"
+            icon={MoreHorizontal}
+            onClick={() => setMoreOpen(true)}
+          />
+        </div>
+      </nav>
+    </>
   );
 }
 
